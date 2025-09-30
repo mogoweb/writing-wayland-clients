@@ -477,7 +477,7 @@ $ ./runme
 
 你会看到屏幕上弹出一个黑色方块：
 
-![](https://bugaevc.gitbooks.io/writing-wayland-clients/content/black-square/wayland-black-square.png)
+![](https://cdn.nlark.com/yuque/0/2025/png/12732443/1757409452230-0c86bb19-7435-4ae8-9d55-631cdde194fd.png)
 
 它没有窗口边框，因此你无法通过拖拽来移动它，不过你的 Wayland 合成器可能会提供一些额外的方法来管理这些“不愿被管理”的窗口。比如，在 GNOME 中，当你按住 Super 键时，可以拖动任何窗口。除此之外，它的行为应该和普通窗口一样，例如，它应该会出现在应用程序切换器中，比如 GNOME Shell 的概览界面，或者通过按 Alt-Tab 调出的切换器中。
 
