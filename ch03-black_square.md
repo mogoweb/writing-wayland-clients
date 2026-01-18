@@ -487,3 +487,138 @@ $ ./runme
 它没有窗口边框，因此你无法通过拖拽来移动它，不过你的 Wayland 合成器可能会提供一些额外的方法来管理这些“不愿被管理”的窗口。比如，在 GNOME 中，当你按住 Super 键时，可以拖动任何窗口。除此之外，它的行为应该和普通窗口一样，例如，它应该会出现在应用程序切换器中，比如 GNOME Shell 的概览界面，或者通过按 Alt-Tab 调出的切换器中。
 
 我们也没有实现关闭窗口的功能，程序也没有响应 ping 事件，因此你的合成器可能会在一段时间后认为该窗口没有响应，并提示你“强制退出”（也就是杀掉进程）。当然，你也可以直接用 Ctrl-C 手动终止进程。
+
+### 附言：其实并没有那么多往返（roundtrip）
+
+看起来我们的代码在进程与合成器之间进行了大量的往返通信。我们在获取全局对象、创建内存池、在其中分配缓冲区、构造诸如 surface 和 shell_surface 等各种对象，并在其上调用方法。如果每一个动作都需要一次往返才能完成，那么在用户看到那个黑色方块之前，我们大概要进行 12 次往返（而且这还是在合成器只公布我们所需的全局对象的前提下）。想象一下那会有多慢。实际上，如果你用过 X.Org，甚至都不用想象。Wayland 在这方面要好得多。
+
+让我们看看这个“黑色方块”程序中实际发生了什么。
+
+Wayland-client 库内置了日志功能，可以通过将 WAYLAND_DEBUG 环境变量设置为 1 来启用：
+
+```
+$ WAYLAND_DEBUG=1 ./runme
+[ 671822.995]  -> wl_display@1.get_registry(new id wl_registry@2)
+[ 671823.032]  -> wl_display@1.sync(new id wl_callback@3)
+[ 671823.191] wl_display@1.delete_id(3)
+[ 671823.225] wl_registry@2.global(1, "wl_compositor", 6)
+[ 671823.232]  -> wl_registry@2.bind(1, "wl_compositor", 3, new id [unknown]@4)
+[ 671823.238] wl_registry@2.global(2, "wl_drm", 2)
+[ 671823.240] wl_registry@2.global(3, "wl_shm", 1)
+[ 671823.241]  -> wl_registry@2.bind(3, "wl_shm", 1, new id [unknown]@5)
+[ 671823.245] wl_registry@2.global(5, "zxdg_output_manager_v1", 3)
+[ 671823.247] wl_registry@2.global(6, "wl_data_device_manager", 3)
+[ 671823.252] wl_registry@2.global(7, "zwp_primary_selection_device_manager_v1", 1)
+[ 671823.258] wl_registry@2.global(8, "wl_subcompositor", 1)
+[ 671823.265] wl_registry@2.global(9, "xdg_wm_base", 6)
+[ 671823.266]  -> wl_registry@2.bind(9, "xdg_wm_base", 1, new id [unknown]@6)
+[ 671823.268] wl_registry@2.global(10, "gtk_shell1", 5)
+[ 671823.269] wl_registry@2.global(11, "wp_viewporter", 1)
+[ 671823.270] wl_registry@2.global(12, "wp_fractional_scale_manager_v1", 1)
+[ 671823.271] wl_registry@2.global(13, "zwp_pointer_gestures_v1", 3)
+[ 671823.272] wl_registry@2.global(14, "zwp_tablet_manager_v2", 1)
+[ 671823.273] wl_registry@2.global(15, "wl_seat", 8)
+[ 671823.275] wl_registry@2.global(16, "zwp_relative_pointer_manager_v1", 1)
+[ 671823.276] wl_registry@2.global(17, "zwp_pointer_constraints_v1", 1)
+[ 671823.279] wl_registry@2.global(18, "zxdg_exporter_v2", 1)
+[ 671823.280] wl_registry@2.global(19, "zxdg_importer_v2", 1)
+[ 671823.281] wl_registry@2.global(20, "zxdg_exporter_v1", 1)
+[ 671823.283] wl_registry@2.global(21, "zxdg_importer_v1", 1)
+[ 671823.284] wl_registry@2.global(22, "zwp_linux_dmabuf_v1", 5)
+[ 671823.285] wl_registry@2.global(23, "wp_single_pixel_buffer_manager_v1", 1)
+[ 671823.287] wl_registry@2.global(24, "zwp_keyboard_shortcuts_inhibit_manager_v1", 1)
+[ 671823.288] wl_registry@2.global(25, "zwp_text_input_manager_v3", 1)
+[ 671823.289] wl_registry@2.global(26, "wp_presentation", 1)
+[ 671823.290] wl_registry@2.global(27, "xdg_activation_v1", 1)
+[ 671823.291] wl_registry@2.global(28, "zwp_idle_inhibit_manager_v1", 1)
+[ 671823.292] wl_registry@2.global(35, "wl_output", 4)
+[ 671823.293] wl_callback@3.done(7460)
+[ 671823.295]  -> wl_compositor@4.create_surface(new id wl_surface@3)
+[ 671823.297]  -> xdg_wm_base@6.get_xdg_surface(new id xdg_surface@7, wl_surface@3)
+[ 671823.300]  -> xdg_surface@7.get_toplevel(new id xdg_toplevel@8)
+[ 671823.302]  -> xdg_toplevel@8.set_title("黑色窗口")
+[ 671823.305]  -> wl_surface@3.commit()
+Initial wl_surface_commit sent
+[ 671827.011] xdg_toplevel@8.configure(0, 0, array[0])
+[ 671827.014] xdg_surface@7.configure(401)
+Received xdg_surface.configure event
+[ 671827.015]  -> xdg_surface@7.ack_configure(401)
+[ 671827.121]  -> wl_shm@5.create_pool(new id wl_shm_pool@9, fd 5, 160000)
+[ 671827.125]  -> wl_shm_pool@9.create_buffer(new id wl_buffer@10, 0, 200, 200, 800, 1)
+[ 671827.127]  -> wl_shm_pool@9.destroy()
+[ 671827.129]  -> wl_surface@3.attach(wl_buffer@10, 0, 0)
+[ 671827.132]  -> wl_surface@3.commit()
+[ 671828.995] wl_display@1.delete_id(9)
+[ 671836.826] xdg_toplevel@8.configure(200, 200, array[4])
+[ 671836.836] xdg_surface@7.configure(403)
+Received xdg_surface.configure event
+[ 671836.842]  -> xdg_surface@7.ack_configure(403)
+[ 671836.845]  -> wl_buffer@10.destroy()
+[ 671836.938]  -> wl_shm@5.create_pool(new id wl_shm_pool@9, fd 5, 160000)
+[ 671836.943]  -> wl_shm_pool@9.create_buffer(new id wl_buffer@11, 0, 200, 200, 800, 1)
+[ 671836.945]  -> wl_shm_pool@9.destroy()
+[ 671836.948]  -> wl_surface@3.attach(wl_buffer@11, 0, 0)
+[ 671836.951]  -> wl_surface@3.commit()
+[ 671837.162] wl_display@1.delete_id(10)
+[ 671837.165] wl_display@1.delete_id(9)
+[ 678110.704] xdg_toplevel@8.configure(200, 200, array[0])
+[ 678110.733] xdg_surface@7.configure(404)
+Received xdg_surface.configure event
+[ 678110.742]  -> xdg_surface@7.ack_configure(404)
+[ 678110.747]  -> wl_buffer@11.destroy()
+[ 678110.974]  -> wl_shm@5.create_pool(new id wl_shm_pool@9, fd 5, 160000)
+[ 678110.982]  -> wl_shm_pool@9.create_buffer(new id wl_buffer@10, 0, 200, 200, 800, 1)
+[ 678110.986]  -> wl_shm_pool@9.destroy()
+[ 678110.992]  -> wl_surface@3.attach(wl_buffer@10, 0, 0)
+[ 678110.996]  -> wl_surface@3.commit()
+[ 678113.411] wl_display@1.delete_id(11)
+[ 678113.428] wl_display@1.delete_id(9)
+[ 681694.189] xdg_toplevel@8.configure(200, 200, array[0])
+[ 681694.232] xdg_surface@7.configure(406)
+Received xdg_surface.configure event
+[ 681694.241]  -> xdg_surface@7.ack_configure(406)
+[ 681694.246]  -> wl_buffer@10.destroy()
+[ 681694.486]  -> wl_shm@5.create_pool(new id wl_shm_pool@9, fd 5, 160000)
+[ 681694.497]  -> wl_shm_pool@9.create_buffer(new id wl_buffer@11, 0, 200, 200, 800, 1)
+[ 681694.501]  -> wl_shm_pool@9.destroy()
+[ 681694.508]  -> wl_surface@3.attach(wl_buffer@11, 0, 0)
+[ 681694.512]  -> wl_surface@3.commit()
+[ 681709.158] wl_display@1.delete_id(10)
+[ 681709.175] wl_display@1.delete_id(9)
+^C
+```
+
+在这里，请求以 -> 箭头作为前缀。这些是真正发出的 Wayland 请求和事件，因此你不会在这里看到 wayland-client 额外做的事情，比如 wl_display_connect 和 wl_display_roundtrip（后者实际上是对 wl_display.sync 和 wl_callback.done 的封装，而你确实能看到它们）。
+
+请回忆一下，无论是请求还是事件，都不需要通过一次往返才能完成。例如，从 wl_compositor.create_surface 以下开始的所有请求，都是在没有等待合成器响应的情况下，快速连续发出的。
+
+在基于 wayland-client 日志统计往返次数时，有一个需要注意的地方：wayland-client 在方法被调用（并被安排发送）时就立即记录日志，而不是在它们真正被发送出去时才记录。这一点很重要，因为 Wayland 的异步特性允许我们将大量方法调用排队，等到需要等待响应时再一次性发送出去。
+
+为了从另一个角度理解实际发生了什么，我们可以深入到系统调用层面：
+
+```
+$ strace -e trace=network ./runme
+socket(AF_UNIX, SOCK_STREAM|SOCK_CLOEXEC, 0) = 3
+connect(3, {sa_family=AF_UNIX, sun_path="/run/user/1000/wayland-0"}, 27) = 0
+sendmsg(3, {msg_name=NULL, msg_namelen=0, msg_iov=[{iov_base="\1\0\0\0\1\0\f\0\2\0\0\0\1\0\0\0\0\0\f\0\3\0\0\0", iov_len=24}], msg_iovlen=1, msg_controllen=0, msg_flags=0}, MSG_DONTWAIT|MSG_NOSIGNAL) = 24
+recvmsg(3, {msg_name=NULL, msg_namelen=0, msg_iov=[{iov_base="\2\0\0\0\0\0$\0\1\0\0\0\16\0\0\0wl_compositor\0\0\0"..., iov_len=4096}], msg_iovlen=1, msg_controllen=0, msg_flags=MSG_CMSG_CLOEXEC}, MSG_DONTWAIT|MSG_CMSG_CLOEXEC) = 1196
+Initial wl_surface_commit sent
+sendmsg(3, {msg_name=NULL, msg_namelen=0, msg_iov=[{iov_base="\2\0\0\0\0\0(\0\1\0\0\0\16\0\0\0wl_compositor\0\0\0"..., iov_len=184}], msg_iovlen=1, msg_controllen=0, msg_flags=0}, MSG_DONTWAIT|MSG_NOSIGNAL) = 184
+recvmsg(3, {msg_name=NULL, msg_namelen=0, msg_iov=[{iov_base="\5\0\0\0\0\0\f\0\0\0\0\0\5\0\0\0\0\0\f\0\1\0\0\0\5\0\0\0\0\0\f\0"..., iov_len=2900}, {iov_base="", iov_len=1196}], msg_iovlen=2, msg_controllen=0, msg_flags=MSG_CMSG_CLOEXEC}, MSG_DONTWAIT|MSG_CMSG_CLOEXEC) = 236
+Received xdg_surface.configure event
+sendmsg(3, {msg_name=NULL, msg_namelen=0, msg_iov=[{iov_base="\7\0\0\0\4\0\f\0\264\1\0\0\5\0\0\0\0\0\20\0\t\0\0\0\0q\2\0\t\0\0\0"..., iov_len=96}], msg_iovlen=1, msg_control=[{cmsg_len=20, cmsg_level=SOL_SOCKET, cmsg_type=SCM_RIGHTS, cmsg_data=[5]}], msg_controllen=20, msg_flags=0}, MSG_DONTWAIT|MSG_NOSIGNAL) = 96
+recvmsg(3, {msg_name=NULL, msg_namelen=0, msg_iov=[{iov_base="\1\0\0\0\1\0\f\0\t\0\0\0\n\0\0\0\0\0\10\0", iov_len=2664}, {iov_base="", iov_len=1432}], msg_iovlen=2, msg_controllen=0, msg_flags=MSG_CMSG_CLOEXEC}, MSG_DONTWAIT|MSG_CMSG_CLOEXEC) = 20
+recvmsg(3, {msg_name=NULL, msg_namelen=0, msg_iov=[{iov_base="\10\0\0\0\0\0\30\0\310\0\0\0\310\0\0\0\4\0\0\0\4\0\0\0\7\0\0\0\0\0\f\0"..., iov_len=2644}, {iov_base="", iov_len=1452}], msg_iovlen=2, msg_controllen=0, msg_flags=MSG_CMSG_CLOEXEC}, MSG_DONTWAIT|MSG_CMSG_CLOEXEC) = 36
+Received xdg_surface.configure event
+sendmsg(3, {msg_name=NULL, msg_namelen=0, msg_iov=[{iov_base="\7\0\0\0\4\0\f\0\266\1\0\0\n\0\0\0\0\0\10\0\5\0\0\0\0\0\20\0\t\0\0\0"..., iov_len=104}], msg_iovlen=1, msg_control=[{cmsg_len=20, cmsg_level=SOL_SOCKET, cmsg_type=SCM_RIGHTS, cmsg_data=[5]}], msg_controllen=20, msg_flags=0}, MSG_DONTWAIT|MSG_NOSIGNAL) = 104
+recvmsg(3, {msg_name=NULL, msg_namelen=0, msg_iov=[{iov_base="\1\0\0\0\1\0\f\0\n\0\0\0\1\0\0\0\1\0\f\0\t\0\0\0\v\0\0\0\0\0\10\0", iov_len=2608}, {iov_base="", iov_len=1488}], msg_iovlen=2, msg_controllen=0, msg_flags=MSG_CMSG_CLOEXEC}, MSG_DONTWAIT|MSG_CMSG_CLOEXEC) = 32
+recvmsg(3, {msg_name=NULL, msg_namelen=0, msg_iov=[{iov_base="\10\0\0\0\0\0\24\0\310\0\0\0\310\0\0\0\0\0\0\0\7\0\0\0\0\0\f\0\267\1\0\0", iov_len=2576}, {iov_base="", iov_len=1520}], msg_iovlen=2, msg_controllen=0, msg_flags=MSG_CMSG_CLOEXEC}, MSG_DONTWAIT|MSG_CMSG_CLOEXEC) = 32
+```
+
+我们可以看到，程序创建了一个新的 Unix 域流套接字，连接到 /run/user/1000/wayland-0，然后发送了初始消息（其中编码了 wl_display.get_registry 和 wl_display.sync 请求）。随后它开始等待（因为我们调用了 wl_display_roundtrip()，而该函数也负责发出 wl_display.sync），等待合成器的响应。合成器用一个消息返回了 wl_registry.global、wl_display.delete_id 和 wl_callback.done 事件。这就是第一次往返。
+
+接着，程序继续发送一个消息，编码了它接下来所做的所有请求，包括三次 wl_registry.bind 调用。
+
+实际上，到这里就结束了。这已经足以让那个黑色方块显示在屏幕上。你在最后看到的来自合成器的另外两条消息，是在窗口创建之后合成器发送给我们的事件（由于我们没有为它们设置监听器，所以在 wayland-client 日志中看不到）。
+
+在 Wayland 中，显示一个简单窗口只需要一次半的往返通信。
