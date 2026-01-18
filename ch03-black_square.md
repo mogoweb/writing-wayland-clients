@@ -180,6 +180,9 @@ int main(void)
     }
 }
 ```
+
+`code/ch03/sample3-1`
+
 如果我们现在要渲染一些东西，只需要往 data 指针指向的内存中写入内容，因为在我们的例子里，缓冲区就从池子的开头开始。
 
 不过，如果只是显示一个黑色方块，我们甚至什么都不需要做：因为在 XRGB8888 格式下，四个零字节 (0, 0, 0, 0) 就表示一个黑色像素（第一个字节会被忽略，后面三个是 RGB 分量）。所以我们的缓冲区已经被填充为一个 200×200 的黑色方块。
@@ -194,7 +197,7 @@ int main(void)
 
 而对于像桌面窗口那样的角色，就要稍微复杂一些，因为这种角色通常需要额外的功能支持（例如响应重设大小、最大化、最小化等）。
 
-在 Wayland 核心协议中，`wl_shell` 和 `wl_shell_surface` 已经被标记为废弃（deprecated），已经被更强大、更标准的 **xdg-shell** 协议扩展所替代，新的 compositor（GNOME、KDE、Weston 9+）基本不会再提供它。所以下面使用 `xdg-shell` 进行说明。
+在 Wayland 核心协议中，`wl_shell` 和 `wl_shell_surface` 已经被标记为废弃（deprecated），被更强大、更标准的 **xdg-shell** 协议扩展所替代，新的 compositor（GNOME、KDE、Weston 9+）基本不会再提供它。所以下面使用 `xdg-shell` 进行说明。
 
 在这个教程中，我们要把 surface 装饰成桌面风格的窗口（toplevel 窗口），所用的角色来自 `xdg-shell` 协议扩展。
 
@@ -468,6 +471,8 @@ int main(void)
 }
 ```
 
+`code/ch03/sample3-2`
+
 现在，如果你像平常一样编译并运行它：
 
 ```bash
@@ -477,7 +482,7 @@ $ ./runme
 
 你会看到屏幕上弹出一个黑色方块：
 
-![](https://cdn.nlark.com/yuque/0/2025/png/12732443/1757409452230-0c86bb19-7435-4ae8-9d55-631cdde194fd.png)
+![](./images/wayland-black-square.png)
 
 它没有窗口边框，因此你无法通过拖拽来移动它，不过你的 Wayland 合成器可能会提供一些额外的方法来管理这些“不愿被管理”的窗口。比如，在 GNOME 中，当你按住 Super 键时，可以拖动任何窗口。除此之外，它的行为应该和普通窗口一样，例如，它应该会出现在应用程序切换器中，比如 GNOME Shell 的概览界面，或者通过按 Alt-Tab 调出的切换器中。
 
