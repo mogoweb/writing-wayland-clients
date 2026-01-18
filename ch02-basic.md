@@ -47,6 +47,8 @@ int main(void)
 }
 ```
 
+`code/ch02/sample2-1`
+
 用下面的命令编译并运行：
 
 ```bash
@@ -205,6 +207,8 @@ int main(void)
 }
 ```
 
+`code/ch02/sample2-2`
+
 编译并运行：
 
 ```bash
@@ -322,6 +326,8 @@ int main(void)
     }
 }
 ```
+
+`code/ch02/sample2-3`
 
 这里的 **wl_display_roundtrip**（它不是 `wl_display` 的请求，而是一个 wayland-client 提供的特殊函数，底层用的是 `wl_display.sync` 请求）会阻塞客户端，直到所有挂起的方法（请求和事件）都完成，且所有事件监听器都执行完毕。
 
