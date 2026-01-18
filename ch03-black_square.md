@@ -2,11 +2,11 @@
 
 《黑方块》是卡济米尔·马列维奇（Kazimir Malevich）的著名画作：
 
-![](https://cdn.nlark.com/yuque/0/2025/png/12732443/1757409429102-92c1ee3a-a368-4ef7-ab34-b4eac96a5d64.png)
+![](./images/Kazimir_Malevich,_1915,_Black_Suprematic_Square,_oil_on_linen_canvas,_79.5_x_79.5_cm,_Tretyakov_Gallery,_Moscow.jpg)
 
 在本节的最后，我们将构建一个至少同样酷（而且黑得多）的东西：
 
-![](https://cdn.nlark.com/yuque/0/2025/png/12732443/1757409452230-0c86bb19-7435-4ae8-9d55-631cdde194fd.png)
+![](./images/wayland-black-square.png)
 
 ### 表面（Surfaces）与缓冲区（Buffers）
 
