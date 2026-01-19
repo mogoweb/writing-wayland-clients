@@ -1,8 +1,8 @@
-### Input
+## 输入（Input）
 
-Once you've set up wl_pointer, handling input events is very easy. Let's start by logging all the input:
+一旦你完成了 `wl_pointer` 的设置，处理输入事件就会变得非常简单。我们先从把所有输入事件打印出来开始：
 
-```
+```c
 void pointer_enter_handler
 (
     void *data,
@@ -18,7 +18,7 @@ void pointer_enter_handler
 
     printf("enter:\t%d %d\n",
         wl_fixed_to_int(x),
-        wl_fixed_to_int(y)); 
+        wl_fixed_to_int(y));
 }
 
 void pointer_leave_handler
@@ -71,9 +71,10 @@ void pointer_axis_handler
     printf("axis: %d %f\n", axis, wl_fixed_to_double(value));
 }
 ```
-The output looks like this:
 
-```
+输出结果大致如下：
+
+```bash
 enter:  76 5
 motion: 76 5
 motion: 77 13
@@ -102,30 +103,30 @@ motion: 91 1
 leave
 ```
 
-As you can see, we get surface-local coordinates with enter and motion events. Those are of opaque type wl_fixed_t which we can convert to and from int and double using wl_fixed_to_int, wl_fixed_to_double, wl_fixed_from_int and wl_fixed_from_double functions.
+可以看到，在 `enter` 和 `motion` 事件中，我们拿到的是相对于 surface 的本地坐标。这些坐标的类型是 `wl_fixed_t`，属于内部类型，可以通过 `wl_fixed_to_int`、`wl_fixed_to_double`、`wl_fixed_from_int` 和 `wl_fixed_from_double` 等函数在 `int` 和 `double` 之间进行转换。
 
-The state argument can be:
+`state` 参数的取值如下：
 
-```
-WL_POINTER_BUTTON_STATE_PRESSED = 1
+```c
+WL_POINTER_BUTTON_STATE_PRESSED  = 1
 WL_POINTER_BUTTON_STATE_RELEASED = 0
 ```
 
-The button argument uses the same values as defined in linux/input-event-codes.h. In particular,
+`button` 参数使用的是 `linux/input-event-codes.h` 中定义的按键值，常见的包括：
 
-```
-BTN_LEFT = 0x110
-BTN_RIGHT = 0x111
+```c
+BTN_LEFT   = 0x110
+BTN_RIGHT  = 0x111
 BTN_MIDDLE = 0x112
 ```
 
-There may be others, however; advanced mice may have up to twenty buttons.
+当然还可能存在其他按键，一些高级鼠标最多可以支持二十个按钮。
 
-The axis argument can be
+`axis` 参数的取值为：
 
-```
-WL_POINTER_AXIS_VERTICAL_SCROLL = 0
+```c
+WL_POINTER_AXIS_VERTICAL_SCROLL   = 0
 WL_POINTER_AXIS_HORIZONTAL_SCROLL = 1
 ```
 
-TODO: keyboard
+TODO：键盘

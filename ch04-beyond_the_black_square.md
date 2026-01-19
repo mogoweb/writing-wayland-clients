@@ -1,2 +1,0 @@
-## Beyond the Black Square
-
