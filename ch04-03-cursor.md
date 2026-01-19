@@ -1,16 +1,16 @@
-### Cursors
+## 光标（Cursors）
 
-You may have noticed that the cursor behaves somewhat strangely when it's hovered over our surface. This is because the cursor image is actually undefined once it enters the surface, and we need to explicitly set it each time.
+你可能注意到，当光标悬停在我们的 surface 上时，行为有些异常。这是因为光标进入 surface 后，其图像实际上是未定义的，我们需要每次显式设置它。
 
-Setting a cursor image is actually pretty easy. You just call `wl_pointer::set_cursor` with a surface argument (and a few others). This gives that surface the role of a cursor.
+设置光标图像其实很简单，只需调用 `wl_pointer::set_cursor` 并传入一个 surface 参数（以及其他一些参数）。这会让该 surface 担任光标的角色。
 
-But to do that, we need to get the `wl_pointer` object first:
+但在此之前，我们需要先获取 `wl_pointer` 对象：
 
 ```c
 struct wl_compositor *compositor;
 struct wl_shm *shm;
 struct wl_seat *seat;
-struct zxdg_shell_v6 *xdg_shell;
+struct xdg_wm_base *wm_base = NULL;
 
 struct wl_pointer *pointer;
 
@@ -31,12 +31,14 @@ void registry_global_handler
     } else if (strcmp(interface, "wl_seat") == 0) {
         seat = wl_registry_bind(registry, name,
             &wl_seat_interface, 1);
-    } else if (strcmp(interface, "zxdg_shell_v6") == 0) {
-        xdg_shell = wl_registry_bind(registry, name,
-            &zxdg_shell_v6_interface, 1);
+    } else if (strcmp(interface, "xdg_wm_base") == 0) {
+        wm_base = wl_registry_bind(registry, name,
+            &xdg_wm_base_interface, 1);
     }
 }
 ```
+
+接下来，定义指针事件的处理函数：
 
 ```c
 void pointer_enter_handler
@@ -101,28 +103,27 @@ const struct wl_pointer_listener pointer_listener = {
 };
 ```
 
-and then in `main()`:
+在 `main()` 中：
 
 ```c
-// wait for the "initial" set of globals to appear
+// 等待初始全局对象出现
 wl_display_roundtrip(display);
 
-// this is only going to work if your computer
-// has a pointing device
+// 这仅在计算机有指点设备时有效
 pointer = wl_seat_get_pointer(seat);
 wl_pointer_add_listener(pointer, &pointer_listener, NULL);
 ```
 
-At this point, we could just create a new surface, render something ourselves and make it the cursor image. Instead of that, we're going to use a library called **wayland-cursor** that handles loading the standard cursors from the system (they are in `/usr/share/icons/ThemeName/cursors`).
+此时，我们可以创建一个新的 surface，自行渲染内容并将其作为光标图像。为了简化操作，我们使用一个名为 **wayland-cursor** 的库，它可以加载系统中标准的光标（通常位于 `/usr/share/icons/ThemeName/cursors`）。
 
-Despite using a similar naming scheme, `wayland-cursor` is a separate library to `wayland-client`, so we need to link it separately:
+注意，`wayland-cursor` 与 `wayland-client` 是两个独立的库，因此需要单独链接：
 
 ```makefile
 runme: main.c xdg-shell.h xdg-shell.c
         gcc main.c xdg-shell.c -l wayland-client -l wayland-cursor -o runme
 ```
 
-and include its header:
+并在代码中包含头文件：
 
 ```c
 #include <wayland-client.h>
@@ -130,19 +131,19 @@ and include its header:
 #include "xdg-shell.h"
 ```
 
-The steps to load a simple cursor image from the default theme are as follows:
+从默认主题加载光标图像的步骤如下：
 
 ```c
-// global variables:
+// 全局变量
 struct wl_surface *cursor_surface;
 struct wl_cursor_image *cursor_image;
 
-// code in main():
+// main() 中代码
 struct wl_cursor_theme *cursor_theme =
-    wl_cursor_theme_load(NULL, 24, shm);
+    wl_cursor_theme_load(NULL, 24, shm); // NULL 表示默认主题，24 是像素大小
 struct wl_cursor *cursor =
-    wl_cursor_theme_get_cursor(cursor_theme, "left_ptr");
-cursor_image = cursor->images[0];
+    wl_cursor_theme_get_cursor(cursor_theme, "left_ptr"); // 获取名为 "left_ptr" 的光标
+cursor_image = cursor->images[0]; // 对于动画光标，我们这里只使用第一个图像
 struct wl_buffer *cursor_buffer =
     wl_cursor_image_get_buffer(cursor_image);
 
@@ -151,9 +152,11 @@ wl_surface_attach(cursor_surface, cursor_buffer, 0, 0);
 wl_surface_commit(cursor_surface);
 ```
 
-I've declared the surface and the image to be global to make it easier for us to access them from the `wl_pointer::enter` handler. The `wl_cursor_theme_load` function accepts the theme name (we pass `NULL` to get the default one), the size (in pixels) that we want to use and a `struct wl_shm *` to allocate buffers. We pass the cursor name to `wl_cursor_theme_get_cursor`. Each `struct wl_cursor` can have multiple `struct wl_cursor_image`s in case it's animated, but we're only going to use the first one here for simplicity.
+我们将光标 surface 和图像声明为全局变量，以便在 `wl_pointer::enter` 事件处理函数中访问。
 
-Once we've prepared the surface, it's very easy to use `wl_pointer::set_cursor`:
+`wl_cursor_theme_load` 接受主题名称（传 NULL 使用默认）、光标大小（像素）和 `struct wl_shm *`（用于分配缓冲区）。`wl_cursor_theme_get_cursor` 用于获取光标对象，每个光标对象可能包含多个 `struct wl_cursor_image`（用于动画），这里为了简化，我们只使用第一个。
+
+准备好 surface 后，使用 `wl_pointer::set_cursor` 就非常简单了：
 
 ```c
 void pointer_enter_handler
@@ -171,4 +174,4 @@ void pointer_enter_handler
 }
 ```
 
-If you compile and run the program now, you should see the normal arrow cursor when hovering over the surface. You can also experiment with using other images instead of `"left_ptr"`.
+现在编译并运行程序，当光标悬停在 surface 上时，你应该能看到正常的箭头光标。你也可以尝试使用其他光标图像，而不是 `"left_ptr"`。
