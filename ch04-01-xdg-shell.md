@@ -1,223 +1,326 @@
-### xdg-shell
+## xdg-shell
 
-xdg-shell 是一个 Wayland 协议扩展，目的是替代核心 Wayland 的 `wl_shell`。引用 Wayland 开发者之一 Jasper St. Pierre 的话：“xdg-shell 是 `wl_shell` 的直接替代品。`wl_shell_surface` 有许多令人沮丧的限制，并且由于它被包含在 Wayland 1.0 的核心协议中，因此更难以修改和改进。”
+**注**：由于《Writing Wayland Clients》教程中 xdg-shell 章节基于尚未稳定的 `xdg-shell-unstable-v6.xml` 协议，而该协议现已被稳定版 `xdg-shell.xml` 取代，原文内容已不再完全适用。因此，本部分内容改自《The Wayland Protocol》的 *XDG Shell Basics* 章节。
 
-这里有几点需要理解：
+在 Wayland 架构中，wl_surface 只是一个像素缓冲的承载体，它本身并不具备“窗口”的语义：没有标题栏、没有最大化、也没有“这是一个主窗口还是菜单”的概念。
 
-首先，xdg-shell 是一个协议扩展，并不是 Wayland 核心协议的一部分。因此，我们一直在使用的 wayland-client 库并不直接支持它。不过，由于 Wayland 从一开始就被设计为可扩展的，所以我们可以（而且相当容易）自动生成所有额外的代码，使我们的程序能够像使用核心 Wayland 一样使用 xdg-shell。
+xdg-shell 正是为了解决这个问题而诞生的。
 
-其次，xdg-shell 目前已经是稳定扩展。
+XDG（跨桌面组织，cross-desktop group）shell 是 Wayland 的一个标准协议扩展，用于描述应用程序窗口的语义。
 
-Wayland 内置了一个机制，让客户端和服务器协商它们支持的接口版本（在 wl_registry.global 事件和 wl_registry.bind 请求中的 version 参数），但这只适用于向后兼容的修改。
+xdg-shell 旨在用来替代 Wayland 核心协议中的 wl_shell。正如 Wayland 开发者之一 Jasper St. Pierre 所说：“xdg-shell 是 wl_shell 的直接替代品。wl_shell_surface 存在一些令人沮丧的限制，而且由于它被纳入了 Wayland 1.0 核心协议，使得对它进行修改和改进变得更加困难。”
 
-要查看你的合成器支持的 xdg-shell 版本（如果支持的话），可以列出注册表中公布的所有全局对象：如果使用 weston 合成器，可以运行 `weston-info`，要么用你自己的程序（比如我们在上一节写的那个程序）。
+因此，所有现代 Wayland 桌面环境（GNOME、KDE、wlroots 系）都已经以 xdg-shell 作为事实标准。
 
-你可以在 freedesktop 的 wayland-protocols 仓库中找到 xdg-shell 的 XML 协议定义。具体来说，这里有 `xdg-shell.xml`。你可以手动下载该文件，或者使用系统本地已有的副本（如果存在的话，比如我的在 `/usr/share/wayland-protocols/stable/xdg-shell/xdg-shell.xml`）。接着，使用 `wayland-scanner` 工具生成对应的 `.h` 和 `.c` 文件：
+这里有几点需要理解。
 
-```
+首先，xdg-shell 是一个协议扩展，并不是 Wayland 核心协议的一部分。因此，我们一直使用的 wayland-client 库并没有为它提供直接支持。不过，由于 Wayland 从设计之初就具备良好的可扩展性，可以（而且相当容易地）自动生成所需的附加代码，使我们的程序能够像使用核心 Wayland 协议一样使用 xdg-shell。
+
+其次，xdg-shell 目前已经是一个稳定的扩展。Wayland 内置了一种机制，用于让客户端和服务器协商它们各自支持哪些接口以及对应的版本（即 wl_registry.global 事件和 wl_registry.bind 请求中的 version 参数）。
+
+你可以在 freedesktop 的 wayland-protocols 仓库中找到 xdg-shell 的 XML 协议定义文件，对应的文件是 xdg-shell.xml。你可以手动下载该文件，或者使用系统中已有的本地副本（例如我这里位于 /usr/share/wayland-protocols/stable/xdg-shell/xdg-shell.xml）。接下来，使用 wayland-scanner 工具生成相应的 .h 和 .c 文件：
+
+```bash
 $ wayland-scanner client-header /usr/share/wayland-protocols/stable/xdg-shell/xdg-shell.xml xdg-shell.h
-$ wayland-scanner code /usr/share/wayland-protocols/stable/xdg-shell/xdg-shell.xml xdg-shell.c
+$ wayland-scanner private-code /usr/share/wayland-protocols/stable/xdg-shell/xdg-shell.xml xdg-shell.c
 ```
 
-在 `main.c` 中，将生成的 `xdg-shell.h` 头文件与 `wayland-client.h` 一起包含进去：
+xdg-shell 定义了两种 `wl_surface` 的角色：
+
+* **“toplevel”**：表示应用程序的顶级窗口；
+* **“popup”**：用于上下文菜单、下拉菜单、工具提示等，这些通常是顶级窗口的子窗口。
+
+通过这两种角色，你可以构建一个由多个 surface 组成的层级树结构：顶级窗口位于树的根部，而弹出窗口或额外的顶级窗口位于叶子节点。
+
+该协议还定义了一个 **positioner（定位器）接口**，用于在仅拥有有限的窗口周边信息的情况下，帮助确定弹出窗口（popup）的显示位置。
+
+### xdg_wm_base
+
+`xdg_wm_base` 是本协议中定义的唯一全局接口，它提供了创建所需的其他对象的请求。最基本的实现从处理 "ping" 事件开始，当合成器发送此事件时，您应及时以 "pong" 请求进行响应，以表明您的程序尚未陷入死锁。另一个请求处理定位器的创建，即前面提到的对象。
+
+### XDG Surfaces
+
+在 `xdg-shell` 协议中的 surfaces 被称为 xdg_surface。此接口提供了顶层窗口和弹出窗口这两种 XDG Surface 所共有的一小部分通用功能。然而，每种 XDG Surface 的语义差异仍然很大，因此必须通过赋予其额外的角色来明确指定。
+
+`xdg_surface` 接口提供了额外的请求，用于分配更具体的弹出窗口和顶层窗口角色。一旦我们将对象绑定到 xdg_wm_base 全局对象上，就可以使用 get_xdg_surface 请求来为某个 wl_surface 获取一个 xdg_surface。
+
+```xml
+<request name="get_xdg_surface">
+  <arg name="id" type="new_id" interface="xdg_surface"/>
+  <arg name="surface" type="object" interface="wl_surface"/>
+</request>
+```
+`xdg_surface` 接口除了提供为 Surface 分配更具体的“顶层窗口”或“弹出窗口”角色的请求外，还包含一些两种角色共有的重要功能。在继续探讨针对顶层窗口和弹出窗口的特定语义之前，让我们先来回顾这些通用功能。
+
+```xml
+<event name="configure">
+  <arg name="serial" type="uint" summary="serial of the configure event"/>
+</event>
+
+<request name="ack_configure">
+  <arg name="serial" type="uint" summary="the serial from the configure event"/>
+</request>
+```
+
+xdg-surface 最重要的 API 是这对组合：configure​ 和 ack_configure。Wayland 的一个目标是实现完美的每一帧显示，这意味着不会显示任何处于半完成状态变更的帧。而为了实现这一点，我们必须在客户端和服务器之间同步这些变更。对于 XDG Surface，这对消息正是支持此机制的途径。
+
+我们目前只介绍基础概念，因此可以这样总结这两个事件的重要性：当来自服务器的事件通知您某个 Surface 的配置（或重新配置）时，请将它们应用到待定状态。当 configure 事件到达时，应用这些待定变更，使用 ack_configure 来确认您已完成操作，然后渲染并提交新的一帧。
 
 ```
+<request name="set_window_geometry">
+  <arg name="x" type="int"/>
+  <arg name="y" type="int"/>
+  <arg name="width" type="int"/>
+  <arg name="height" type="int"/>
+</request>
+```
+set_window_geometry​ 请求主要供使用客户端装饰的应用程序使用，用以区分其表面中哪些部分被视为窗口的一部分，哪些部分不是。通常，这用于将窗口背后渲染的客户端投影阴影排除在窗口范围之外。合成器可能会运用此信息来管理其自身排列窗口以及与窗口交互的行为。
+
+### 应用程序窗口
+
+经过诸多准备，我们现在终于要使用 XDG顶层窗口（XDG toplevel）​ 接口来显示应用程序窗口了。该接口包含了管理应用程序窗口所需的众多请求和事件，例如处理最小化、最大化等状态，以及设置窗口标题等。我们将在后续章节详细探讨它的每个部分，现在先关注基础内容。
+
+根据上一节 XDG Surfaces 的介绍，我们已知能从 wl_surface获取一个 xdg_surface，但这仅是第一步：使 surface 纳入 XDG shell 的体系。下一步是将这个 xdg_surface转变为 XDG顶层窗口​: 即一个"顶层"应用程序窗口。之所以称为"顶层"，是因为在最终由 XDG shell 创建的窗口和弹出菜单层级中，它处于最高级别。要创建这样一个顶层窗口，我们可以使用 xdg_surface接口中的相应请求：
+
+```xml
+<request name="get_toplevel">
+  <arg name="id" type="new_id" interface="xdg_toplevel"/>
+</request>
+```
+这个新的 xdg_toplevel接口为我们提供了许多用于管理应用程序窗口生命周期的请求和事件。如果您遵循以下步骤：处理好前一节讨论的 XDG surface 的 configure和 ack_configure配置，并将一个 wl_buffer附加（attach）到我们的 wl_surface并提交（commit），那么一个应用程序窗口就会出现，并将您缓冲区的内容呈现给用户。
+
+```xml
+<request name="set_title">
+  <arg name="title" type="string"/>
+</request>
+```
+
+这个请求的含义应该比较直观，另外还有一个类似的请求：
+
+```
+<request name="set_app_id">
+  <arg name="app_id" type="string"/>
+</request>
+```
+标题通常显示在窗口装饰、任务栏等位置，而应用ID则用于标识您的应用程序或将窗口分组管理。例如，您可以将窗口标题设为"应用程序窗口 —— The Wayland Protocol —— Firefox"，并将应用ID设为"firefox"。
+
+综上所述，以下步骤将引导您从零开始显示一个窗口：
+1. 绑定到 wl_compositor并使用它创建一个 wl_surface
+2. 绑定到 xdg_wm_base并利用您的 wl_surface创建一个 xdg_surface
+3. 通过 xdg_surface.get_toplevel从该 xdg_surface创建一个 xdg_toplevel
+4. 为 xdg_surface配置监听器并等待配置事件
+5. 绑定到您选择的缓冲区分配机制（例如 wl_shm）并分配一个共享缓冲区，然后将内容渲染到其中
+6. 使用 wl_surface.attach将 wl_buffer附加到 wl_surface
+7. 使用 xdg_surface.ack_configure并传入配置事件中的序列号，确认您已准备好合适的帧
+8. 发送 wl_surface.commit请求
+
+下面给一个具体的示例。
+
+### 最小示例
+
+```c
+#define _POSIX_C_SOURCE 200112L
+#include <errno.h>
+#include <fcntl.h>
+#include <limits.h>
+#include <stdbool.h>
+#include <string.h>
+#include <sys/mman.h>
+#include <time.h>
+#include <unistd.h>
 #include <wayland-client.h>
 #include "xdg-shell.h"
-```
 
-并将其一起编译：
-
-```
-$ gcc main.c xdg-shell.c -l wayland-client -o runme
-```
-
-它应该能够无错误地编译，并显示和之前一样的黑色方块（因为我们还没有做任何改动）。
-
-这开始变得有些重复了，所以我们来写一个 Makefile。把下面的内容放到 Makefile 中：
-
-```
-runme: main.c xdg-shell.h xdg-shell.c
-        gcc main.c xdg-shell.c -l wayland-client -o runme
-
-xdg-shell.h: /usr/share/wayland-protocols/stable/xdg-shell/xdg-shell.xml
-        wayland-scanner client-header /usr/share/wayland-protocols/stable/xdg-shell/xdg-shell.xml xdg-shell.h
-
-xdg-shell.c: xdg-shell.xml
-        wayland-scanner code /usr/share/wayland-protocols/stable/xdg-shell/xdg-shell.xml xdg-shell.c
-
-.PHONY: clean
-clean:
-        rm runme xdg-shell.c xdg-shell.h
-```
-
-现在，你只需要用下面这条命令就可以编译并运行它：
-
-```
-$ make
-$ ./runme
-```
-
-让我们开始真正使用 xdg-shell。首先，把全局的 `xdg_shell` 接口绑定上：
-
-```
-struct wl_compositor *compositor;
-struct wl_shm *shm;
-struct xdg_shell *xdg_shell;
-
-void registry_global_handler
-(
-    void *data,
-    struct wl_registry *registry,
-    uint32_t name,
-    const char *interface,
-    uint32_t version
-) {
-    if (strcmp(interface, "wl_compositor") == 0) {
-        compositor = wl_registry_bind(registry, name,
-            &wl_compositor_interface, 3);
-    } else if (strcmp(interface, "wl_shm") == 0) {
-        shm = wl_registry_bind(registry, name,
-            &wl_shm_interface, 1);
-    } else if (strcmp(interface, "xdg_shell") == 0) {
-        xdg_shell = wl_registry_bind(registry, name,
-            &xdg_shell_interface, 1);
+/* Shared memory support code */
+static void
+randname(char *buf)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    long r = ts.tv_nsec;
+    for (int i = 0; i < 6; ++i) {
+        buf[i] = 'A'+(r&15)+(r&16)*2;
+        r >>= 5;
     }
 }
-```
 
-接下来，调用 `xdg-shell` ：
-
-```
-struct wl_surface *surface = wl_compositor_create_surface(compositor);
-struct xdg_surface *xdg_surface =
-    xdg_shell_get_xdg_surface(xdg_shell, surface);
-struct xdg_toplevel *xdg_toplevel =
-    xdg_surface_get_toplevel(xdg_surface);
-```
-
-与 wl_shell_surface 不同，在那里一个 surface 先被赋予 shell surface 的角色，然后再额外设置为顶层窗口；在 xdg-shell 中，xdg_surface 本身并不是一个角色，而 xdg_toplevel 才是。
-如果从继承的角度来理解，可以认为我们有 wl_surface → xdg_surface → xdg_toplevel。
-
-如果你现在编译并运行这个程序，就会遇到一个错误：
-
-```
-$ make
-$ ./runme
-wl_surface@3: error 3: buffer committed to unconfigured xdg_surface
-```
-
-这是因为 xdg-shell 要求在提交缓冲区到对应的 wl_surface 之前，必须先让 xdg_surface 完成配置。我们需要处理 xdg_toplevel.configure 事件，它本质上是合成器告诉我们应该以什么大小绘制表面（这只是一个提示，我们完全可以忽略），以及该表面当前是否处于最大化、全屏、活动等状态（以便我们决定如何绘制窗口装饰）。我们还需要处理 xdg_shell.configure 事件，这是一个巧妙的机制，用来让所有操作具备原子性并避免竞争条件。
-
-```
-void xdg_toplevel_configure_handler
-(
-    void *data,
-    struct zxdg_toplevel_v6 *xdg_toplevel,
-    int32_t width,
-    int32_t height,
-    struct wl_array *states
-) {
-    printf("configure: %dx%d\n", width, height);
+static int
+create_shm_file(void)
+{
+    int retries = 100;
+    do {
+        char name[] = "/wl_shm-XXXXXX";
+        randname(name + sizeof(name) - 7);
+        --retries;
+        int fd = shm_open(name, O_RDWR | O_CREAT | O_EXCL, 0600);
+        if (fd >= 0) {
+            shm_unlink(name);
+            return fd;
+        }
+    } while (retries > 0 && errno == EEXIST);
+    return -1;
 }
 
-void xdg_toplevel_close_handler
-(
-    void *data,
-    struct zxdg_toplevel_v6 *xdg_toplevel
-) {
-    printf("close\n");
+static int
+allocate_shm_file(size_t size)
+{
+    int fd = create_shm_file();
+    if (fd < 0)
+        return -1;
+    int ret;
+    do {
+        ret = ftruncate(fd, size);
+    } while (ret < 0 && errno == EINTR);
+    if (ret < 0) {
+        close(fd);
+        return -1;
+    }
+    return fd;
 }
 
-const struct zxdg_toplevel_v6_listener xdg_toplevel_listener = {
-    .configure = xdg_toplevel_configure_handler,
-    .close = xdg_toplevel_close_handler
+/* Wayland code */
+struct client_state {
+    /* Globals */
+    struct wl_display *wl_display;
+    struct wl_registry *wl_registry;
+    struct wl_shm *wl_shm;
+    struct wl_compositor *wl_compositor;
+    struct xdg_wm_base *xdg_wm_base;
+    /* Objects */
+    struct wl_surface *wl_surface;
+    struct xdg_surface *xdg_surface;
+    struct xdg_toplevel *xdg_toplevel;
 };
 
-void xdg_surface_configure_handler
-(
-    void *data,
-    struct zxdg_surface_v6 *xdg_surface,
-    uint32_t serial
-) {
-    zxdg_surface_v6_ack_configure(xdg_surface, serial);
+static void
+wl_buffer_release(void *data, struct wl_buffer *wl_buffer)
+{
+    /* Sent by the compositor when it's no longer using this buffer */
+    wl_buffer_destroy(wl_buffer);
 }
 
-const struct zxdg_surface_v6_listener xdg_surface_listener = {
-    .configure = xdg_surface_configure_handler
+static const struct wl_buffer_listener wl_buffer_listener = {
+    .release = wl_buffer_release,
 };
-```
 
-在这个简单的示例中，我们忽略了 xdg_toplevel.configure 给我们的所有提示，但会在接收到 xdg_surface.configure 时使用 xdg_surface.ack_configure 正确地进行确认。我们还编写了一个 xdg_toplevel.close 的空处理函数（stub handler），因为在添加监听器时，wayland-client 要求你必须为接口可能发出的所有事件提供处理函数。稍后我们会实现真正的关闭和退出逻辑。
+static struct wl_buffer *
+draw_frame(struct client_state *state)
+{
+    const int width = 640, height = 480;
+    int stride = width * 4;
+    int size = stride * height;
 
-接下来，在 main() 中：
+    int fd = allocate_shm_file(size);
+    if (fd == -1) {
+        return NULL;
+    }
 
-```
-struct wl_surface *surface = wl_compositor_create_surface(compositor);
-struct zxdg_surface_v6 *xdg_surface =
-    zxdg_shell_v6_get_xdg_surface(xdg_shell, surface);
-zxdg_surface_v6_add_listener(xdg_surface, &xdg_surface_listener, NULL);
-struct zxdg_toplevel_v6 *xdg_toplevel =
-    zxdg_surface_v6_get_toplevel(xdg_surface);
-zxdg_toplevel_v6_add_listener(xdg_toplevel, &xdg_toplevel_listener, NULL);
+    uint32_t *data = mmap(NULL, size,
+            PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    if (data == MAP_FAILED) {
+        close(fd);
+        return NULL;
+    }
 
-// signal that the surface is ready to be configured
-wl_surface_commit(surface);
+    struct wl_shm_pool *pool = wl_shm_create_pool(state->wl_shm, fd, size);
+    struct wl_buffer *buffer = wl_shm_pool_create_buffer(pool, 0,
+            width, height, stride, WL_SHM_FORMAT_XRGB8888);
+    wl_shm_pool_destroy(pool);
+    close(fd);
 
-// ...
-// create a pool
-// create a buffer
-// ...
+    /* Draw checkerboxed background */
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            if ((x + y / 8 * 8) % 16 < 8)
+                data[y * width + x] = 0xFF666666;
+            else
+                data[y * width + x] = 0xFFEEEEEE;
+        }
+    }
 
-// wait for the surface to be configured
-wl_display_roundtrip(display);
-
-wl_surface_attach(surface, buffer, 0, 0);
-wl_surface_commit(surface);
-
-while (1) {
-    wl_display_dispatch(display);
-}
-```
-
-除了设置监听器之外，我们还做了两个重要的改动。首先，我们会在尚未附加任何缓冲区之前，立即调用 wl_surface.commit。这会促使合成器（compositor）发出相应的 configure 事件。在附加缓冲区之前，我们会通过额外调用 wl_display_roundtrip() 来等待这些事件被接收并处理。
-
-这样应该就足够成功显示那个黑色方块了。不过，既然已经做到这一步，我们也顺便实现一下对合成器 ping 的响应，以免合成器认为我们的程序没有响应：
-
-```
-void xdg_shell_ping_handler
-(
-    void *data,
-    struct zxdg_shell_v6 *xdg_shell,
-    uint32_t serial
-) {
-    zxdg_shell_v6_pong(xdg_shell, serial);
-    printf("ping-pong\n");
+    munmap(data, size);
+    wl_buffer_add_listener(buffer, &wl_buffer_listener, NULL);
+    return buffer;
 }
 
-const struct zxdg_shell_v6_listener xdg_shell_listener = {
-    .ping = xdg_shell_ping_handler
+static void
+xdg_surface_configure(void *data,
+        struct xdg_surface *xdg_surface, uint32_t serial)
+{
+    struct client_state *state = data;
+    xdg_surface_ack_configure(xdg_surface, serial);
+
+    struct wl_buffer *buffer = draw_frame(state);
+    wl_surface_attach(state->wl_surface, buffer, 0, 0);
+    wl_surface_commit(state->wl_surface);
+}
+
+static const struct xdg_surface_listener xdg_surface_listener = {
+    .configure = xdg_surface_configure,
 };
+
+static void
+xdg_wm_base_ping(void *data, struct xdg_wm_base *xdg_wm_base, uint32_t serial)
+{
+    xdg_wm_base_pong(xdg_wm_base, serial);
+}
+
+static const struct xdg_wm_base_listener xdg_wm_base_listener = {
+    .ping = xdg_wm_base_ping,
+};
+
+static void
+registry_global(void *data, struct wl_registry *wl_registry,
+        uint32_t name, const char *interface, uint32_t version)
+{
+    struct client_state *state = data;
+    if (strcmp(interface, wl_shm_interface.name) == 0) {
+        state->wl_shm = wl_registry_bind(
+                wl_registry, name, &wl_shm_interface, 1);
+    } else if (strcmp(interface, wl_compositor_interface.name) == 0) {
+        state->wl_compositor = wl_registry_bind(
+                wl_registry, name, &wl_compositor_interface, 4);
+    } else if (strcmp(interface, xdg_wm_base_interface.name) == 0) {
+        state->xdg_wm_base = wl_registry_bind(
+                wl_registry, name, &xdg_wm_base_interface, 1);
+        xdg_wm_base_add_listener(state->xdg_wm_base,
+                &xdg_wm_base_listener, state);
+    }
+}
+
+static void
+registry_global_remove(void *data,
+        struct wl_registry *wl_registry, uint32_t name)
+{
+    /* This space deliberately left blank */
+}
+
+static const struct wl_registry_listener wl_registry_listener = {
+    .global = registry_global,
+    .global_remove = registry_global_remove,
+};
+
+int
+main(int argc, char *argv[])
+{
+    struct client_state state = { 0 };
+    state.wl_display = wl_display_connect(NULL);
+    state.wl_registry = wl_display_get_registry(state.wl_display);
+    wl_registry_add_listener(state.wl_registry, &wl_registry_listener, &state);
+    wl_display_roundtrip(state.wl_display);
+
+    state.wl_surface = wl_compositor_create_surface(state.wl_compositor);
+    state.xdg_surface = xdg_wm_base_get_xdg_surface(
+            state.xdg_wm_base, state.wl_surface);
+    xdg_surface_add_listener(state.xdg_surface, &xdg_surface_listener, &state);
+    state.xdg_toplevel = xdg_surface_get_toplevel(state.xdg_surface);
+    xdg_toplevel_set_title(state.xdg_toplevel, "Example client");
+    wl_surface_commit(state.wl_surface);
+
+    while (wl_display_dispatch(state.wl_display)) {
+        /* This space deliberately left blank */
+    }
+
+    return 0;
+}
 ```
-
-并在 main() 中添加：
-
-```
-// wait for the "initial" set of globals to appear
-wl_display_roundtrip(display);
-
-zxdg_shell_v6_add_listener(xdg_shell, &xdg_shell_listener, NULL);
-```
-
-编译并运行之：
-
-```
-$ make
-$ ./runme
-configure: 0x0
-configure: 0x0
-ping-pong
-^C
-```
-
-这一次我们又成功显示出了黑色方块，不过是通过 xdg-shell！我们可以看到，合成器并没有给出任何有用的尺寸提示（但如果你尝试让窗口最大化贴靠时，它就会提供）。此外，它有时还会向我们的程序发送 ping（在 GNOME Shell 中，这通常发生在窗口在概览模式下被选中时）。
