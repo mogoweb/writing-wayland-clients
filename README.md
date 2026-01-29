@@ -18,6 +18,12 @@ Wayland 取代 X11 已成为不可逆转的趋势，主流 Linux 桌面环境已
 
 受限于个人水平，且 Wayland 协议仍在持续演进之中，文中如有疏漏或不准确之处，欢迎读者不吝指正。
 
+要编译示例源码，请提前安装如下开发包：
+
+```
+sudo apt install build-essential libwayland-dev wayland-protocols libwayland-bin libcairo2-dev
+```
+
 [一、简介](./ch01-introduction.md)
 
 [二、编写一个基础应用](./ch02-basic.md)
@@ -33,3 +39,9 @@ Wayland 取代 X11 已成为不可逆转的趋势，主流 Linux 桌面环境已
 [4.3 光标](./ch04-03-cursor.md)
 
 [4.4 输入](./ch04-04-input.md)
+
+[4.5 窗口装饰](./ch04-05-decoration.md)
+
+五、深入 Wayland
+
+[5.1 深入 Surfaces](./ch05-01-surfaces-in-depth.md)
