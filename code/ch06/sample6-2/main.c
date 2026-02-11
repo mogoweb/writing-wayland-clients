@@ -6,16 +6,11 @@
 #include <sys/mman.h>
 #include <wayland-client.h>
 #include <cairo/cairo.h>
-#include <dbus/dbus.h>
 #include <poll.h>
 
 #include "xdg-shell-client-protocol.h"
 #include "xdg-decoration-client-protocol.h"
-
-// SNI 相关的属性定义
-#define SNI_SERVICE   "org.wayland.demo.tray"
-#define SNI_PATH      "/StatusNotifierItem"
-#define SNI_INTERFACE "org.kde.StatusNotifierItem"
+#include "sni.h"
 
 // 状态结构体
 struct app_state {
@@ -34,171 +29,8 @@ struct app_state {
     int running;
     int visible;
 
-    DBusConnection *dbus_conn;
+    cairo_surface_t *my_icon_surface;
 };
-
-static const char introspection_xml[] =
-"<node>"
-"  <interface name='org.freedesktop.DBus.Introspectable'>"
-"    <method name='Introspect'>"
-"      <arg name='xml' type='s' direction='out'/>"
-"    </method>"
-"  </interface>"
-"  <interface name='org.freedesktop.DBus.Properties'>"
-"    <method name='Get'>"
-"      <arg direction='in' type='s'/>"
-"      <arg direction='in' type='s'/>"
-"      <arg direction='out' type='v'/>"
-"    </method>"
-"    <method name='GetAll'>"
-"      <arg direction='in' type='s'/>"
-"      <arg direction='out' type='a{sv}'/>"
-"    </method>"
-"  </interface>"
-"  <interface name='org.kde.StatusNotifierItem'>"
-"    <method name='Activate'>"
-"      <arg type='i' direction='in'/>"
-"      <arg type='i' direction='in'/>"
-"    </method>"
-"    <property name='Category' type='s' access='read'/>"
-"    <property name='Id' type='s' access='read'/>"
-"    <property name='Status' type='s' access='read'/>"
-"    <property name='IconName' type='s' access='read'/>"
-"  </interface>"
-"</node>";
-
-static void append_string_variant(DBusMessageIter *iter, const char *value) {
-    DBusMessageIter variant;
-    dbus_message_iter_open_container(iter, DBUS_TYPE_VARIANT, "s", &variant);
-    dbus_message_iter_append_basic(&variant, DBUS_TYPE_STRING, &value);
-    dbus_message_iter_close_container(iter, &variant);
-}
-
-// --- D-Bus 属性回调：这里定义图标和状态 ---
-DBusHandlerResult sni_message_handler(DBusConnection *conn, DBusMessage *msg, void *data) {
-    printf("D-Bus 消息到达\n");
-    if (dbus_message_is_method_call(msg,
-        "org.freedesktop.DBus.Introspectable",
-        "Introspect")) {
-
-        DBusMessage *reply = dbus_message_new_method_return(msg);
-        dbus_message_append_args(reply,
-                                 DBUS_TYPE_STRING,
-                                 &introspection_xml,
-                                 DBUS_TYPE_INVALID);
-
-        dbus_connection_send(conn, reply, NULL);
-        dbus_connection_flush(conn);
-        dbus_message_unref(reply);
-        return DBUS_HANDLER_RESULT_HANDLED;
-    }
-    // 1. 处理属性获取请求 (这是托盘获取图标的关键)
-    if (dbus_message_is_method_call(msg, "org.freedesktop.DBus.Properties", "Get")) {
-        const char *iface, *prop;
-        dbus_message_get_args(msg, NULL, DBUS_TYPE_STRING, &iface, DBUS_TYPE_STRING, &prop, DBUS_TYPE_INVALID);
-
-        DBusMessage *reply = dbus_message_new_method_return(msg);
-        DBusMessageIter iter, variant;
-
-        if (strcmp(prop, "IconName") == 0) {
-            printf("获取图标属性\n");
-            // 【在这里指定图标】可以使用系统图标名，如 "utilities-terminal", "favorite", "applications-games"
-            const char *icon_name = "sunlogin_client.png"; 
-            dbus_message_iter_init_append(reply, &iter);
-            dbus_message_iter_open_container(&iter, DBUS_TYPE_VARIANT, "s", &variant);
-            dbus_message_iter_append_basic(&variant, DBUS_TYPE_STRING, &icon_name);
-            dbus_message_iter_close_container(&iter, &variant);
-        } else if (strcmp(prop, "Status") == 0) {
-            // 状态可以是 Active, Passive, NeedsAttention
-            const char *status = "Active";
-            dbus_message_iter_init_append(reply, &iter);
-            dbus_message_iter_open_container(&iter, DBUS_TYPE_VARIANT, "s", &variant);
-            dbus_message_iter_append_basic(&variant, DBUS_TYPE_STRING, &status);
-            dbus_message_iter_close_container(&iter, &variant);
-        } else if (strcmp(prop, "Id") == 0) {
-            const char *id = "MyWaylandApp";
-            dbus_message_iter_init_append(reply, &iter);
-            dbus_message_iter_open_container(&iter, DBUS_TYPE_VARIANT, "s", &variant);
-            dbus_message_iter_append_basic(&variant, DBUS_TYPE_STRING, &id);
-            dbus_message_iter_close_container(&iter, &variant);
-        } else if (strcmp(prop, "Category") == 0) {
-            const char *cat = "ApplicationStatus";
-            dbus_message_iter_init_append(reply, &iter);
-            dbus_message_iter_open_container(&iter, DBUS_TYPE_VARIANT, "s", &variant);
-            dbus_message_iter_append_basic(&variant, DBUS_TYPE_STRING, &cat);
-            dbus_message_iter_close_container(&iter, &variant);
-        }
-
-        dbus_connection_send(conn, reply, NULL);
-        dbus_message_unref(reply);
-        return DBUS_HANDLER_RESULT_HANDLED;
-    }
-
-    // 2. 处理点击托盘动作 (Activate 方法)
-    if (dbus_message_is_method_call(msg, SNI_INTERFACE, "Activate")) {
-        printf("托盘被点击，尝试恢复窗口...\n");
-        // 这里应触发 Wayland 重新显示窗口的逻辑
-        return DBUS_HANDLER_RESULT_HANDLED;
-    }
-
-    return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
-}
-
-// --- 初始化 SNI ---
-static void setup_sni(struct app_state *app) {
-    DBusError err;
-    dbus_error_init(&err);
-
-    app->dbus_conn = dbus_bus_get(DBUS_BUS_SESSION, &err);
-    if (!app->dbus_conn ||dbus_error_is_set(&err)) {
-        fprintf(stderr, "DBus error: %s\n", err.message);
-        dbus_error_free(&err);
-        return;
-    }
-
-    int ret = dbus_bus_request_name(app->dbus_conn,
-                                    SNI_SERVICE,
-                                    DBUS_NAME_FLAG_REPLACE_EXISTING,
-                                    &err);
-
-    if (ret != DBUS_REQUEST_NAME_REPLY_PRIMARY_OWNER) {
-        fprintf(stderr, "Failed to acquire name\n");
-        return;
-    }
-    printf("成功注册 D-Bus 服务名: %s\n", SNI_SERVICE);
-
-    DBusObjectPathVTable vtable = {
-        .message_function = sni_message_handler
-    };
-
-    if (!dbus_connection_register_object_path(app->dbus_conn,
-                                              SNI_PATH,
-                                              &vtable,
-                                              app)) {
-        fprintf(stderr, "Failed to register object path\n");
-        return;
-    }
-    printf("成功注册 D-Bus 对象路径: %s\n", SNI_PATH);
-    dbus_connection_read_write_dispatch(app->dbus_conn, 100);
-
-    /* 注册到 watcher */
-    DBusMessage *msg = dbus_message_new_method_call(
-        "org.kde.StatusNotifierWatcher",
-        "/StatusNotifierWatcher",
-        "org.kde.StatusNotifierWatcher",
-        "RegisterStatusNotifierItem");
-
-    const char *full = SNI_SERVICE;
-    dbus_message_append_args(msg,
-                             DBUS_TYPE_STRING,
-                             &full,
-                             DBUS_TYPE_INVALID);
-
-    dbus_connection_send(app->dbus_conn, msg, NULL);
-    dbus_connection_flush(app->dbus_conn);
-    printf("已向 StatusNotifierWatcher 注册\n");
-    dbus_message_unref(msg);
-}
 
 // --- Cairo 绘图辅助 ---
 static struct wl_buffer* create_shm_buffer(struct app_state *app) {
@@ -312,8 +144,8 @@ int main() {
     wl_surface_attach(app.surface, buffer, 0, 0);
     wl_surface_commit(app.surface);
 
-    // 设置托盘
-    setup_sni(&app);
+    // 初始化 SNI 托盘
+    sni_manager_t *sni = sni_manager_create("org.deepin.waylanddemo.tray", "utilities-terminal");
 
     struct pollfd fds[1];
     fds[0].fd = wl_display_get_fd(app.display);
@@ -345,10 +177,8 @@ int main() {
         // 分发处理 Wayland 事件
         wl_display_dispatch_pending(app.display);
 
-        // --- STEP 4: 处理 D-Bus 消息 (这是你之前的痛点) ---
-        // read_write_dispatch 会在内部调用你的 sni_message_handler
-        // 参数 0 表示非阻塞，立刻返回
-        dbus_connection_read_write_dispatch(app.dbus_conn, 0);
+        // --- STEP 4: 处理 D-Bus 消息 ---
+        sni_manager_dispatch(sni);
     }
 
     return 0;
