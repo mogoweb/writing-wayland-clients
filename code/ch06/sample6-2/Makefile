@@ -1,7 +1,7 @@
 DBUS_CFLAGS = $(shell pkg-config --cflags dbus-1)
 DBUS_LIBS = $(shell pkg-config --libs dbus-1)
 
-runme: main.c xdg-shell-client-protocol.h xdg-shell-protocol.c xdg-decoration-client-protocol.h xdg-decoration-protocol.c
+runme: main.c sni.h sni.c xdg-shell-client-protocol.h xdg-shell-protocol.c xdg-decoration-client-protocol.h xdg-decoration-protocol.c
 	gcc main.c sni.c xdg-shell-protocol.c xdg-decoration-protocol.c -l wayland-client -l cairo -o runme $(DBUS_CFLAGS) $(DBUS_LIBS)
 
 xdg-shell-client-protocol.h: /usr/share/wayland-protocols/stable/xdg-shell/xdg-shell.xml

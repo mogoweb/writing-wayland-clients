@@ -69,6 +69,7 @@ static void append_pixmap(DBusMessageIter *iter, cairo_surface_t *surface) {
     int stride = cairo_image_surface_get_stride(surface);
 
     DBusMessageIter array_iter, struct_iter, byte_iter;
+    printf("append_pixmap: %d x %d\n", width, height);
 
     // 1. 最外层数组 a(iiay)
     dbus_message_iter_open_container(iter, DBUS_TYPE_ARRAY, "(iiay)", &array_iter);
@@ -113,6 +114,8 @@ static void append_pixmap(DBusMessageIter *iter, cairo_surface_t *surface) {
 // --- D-Bus 属性回调：这里定义图标和状态 ---
 static DBusHandlerResult sni_message_handler(DBusConnection *conn, DBusMessage *msg, void *data) {
     printf("D-Bus 消息到达\n");
+    sni_manager_t *sni = (sni_manager_t *)data;
+
     if (dbus_message_is_method_call(msg,
         "org.freedesktop.DBus.Introspectable",
         "Introspect")) {
@@ -136,10 +139,16 @@ static DBusHandlerResult sni_message_handler(DBusConnection *conn, DBusMessage *
         DBusMessage *reply = dbus_message_new_method_return(msg);
         DBusMessageIter iter, variant;
 
-        if (strcmp(prop, "IconName") == 0) {
+        printf("获取属性: %s\n", prop);
+        if (strcmp(prop, "IconPixmap") == 0) {
+            printf("获取IconPixmap属性\n");
+            dbus_message_iter_init_append(reply, &iter);
+            dbus_message_iter_open_container(&iter, DBUS_TYPE_VARIANT, "a(iiay)", &variant);
+            append_pixmap(&variant, sni->icon_surface); // 调用转换函数
+            dbus_message_iter_close_container(&iter, &variant);
+        } else if (strcmp(prop, "IconName") == 0) {
             printf("获取图标属性\n");
-            // 【在这里指定图标】可以使用系统图标名，如 "utilities-terminal", "favorite", "applications-games"
-            const char *icon_name = "sunlogin_client.png"; 
+            const char *icon_name = sni->icon_name;
             dbus_message_iter_init_append(reply, &iter);
             dbus_message_iter_open_container(&iter, DBUS_TYPE_VARIANT, "s", &variant);
             dbus_message_iter_append_basic(&variant, DBUS_TYPE_STRING, &icon_name);
@@ -247,4 +256,9 @@ void sni_manager_dispatch(sni_manager_t *sni)
 {
     // 参数 0 表示非阻塞，立刻返回
     dbus_connection_read_write_dispatch(sni->dbus_conn, 0);
+}
+
+void sni_manager_set_icon_pixmap(sni_manager_t *sni, cairo_surface_t *surface)
+{
+    sni->icon_surface = surface;
 }

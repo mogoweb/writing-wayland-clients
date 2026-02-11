@@ -145,7 +145,18 @@ int main() {
     wl_surface_commit(app.surface);
 
     // 初始化 SNI 托盘
-    sni_manager_t *sni = sni_manager_create("org.deepin.waylanddemo.tray", "utilities-terminal");
+    sni_manager_t *sni = sni_manager_create("org.deepin.waylanddemo.tray", ""/*"utilities-terminal"*/);
+
+    app.my_icon_surface = cairo_image_surface_create_from_png("demo_icon.png");
+    if (cairo_surface_status(app.my_icon_surface) != CAIRO_STATUS_SUCCESS) {
+        // 如果加载失败，画一个红色方块代替
+        app.my_icon_surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, 24, 24);
+        cairo_t *cr = cairo_create(app.my_icon_surface);
+        cairo_set_source_rgb(cr, 1, 0, 0);
+        cairo_paint(cr);
+        cairo_destroy(cr);
+    }
+    sni_manager_set_icon_pixmap(sni, app.my_icon_surface);
 
     struct pollfd fds[1];
     fds[0].fd = wl_display_get_fd(app.display);
