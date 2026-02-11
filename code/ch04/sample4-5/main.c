@@ -29,13 +29,67 @@ struct state {
  
     struct wl_buffer *buffer;
     void *shm_data;
+    int pool_size;
 
     int width, height;
     _Bool running;
 };
+
+static void destroy_shm_buffer(struct state *state) {
+    if (state->buffer) {
+        wl_buffer_destroy(state->buffer);
+        state->buffer = NULL;
+    }
+    if (state->shm_data) {
+        munmap(state->shm_data, state->pool_size);
+        state->shm_data = NULL;
+    }
+}
+
+// 创建共享内存缓冲区
+static int create_shm_buffer(struct state *state) {
+    destroy_shm_buffer(state);
+
+    // 使用 memfd_create 创建一个匿名的、基于内存的文件
+    char tmp_name[] = "/tmp/wayland-shm-XXXXXX";
+    int fd = mkstemp(tmp_name);
+    if (fd < 0) {
+        fprintf(stderr, "mkstemp failed\n");
+        return -1;
+    }
+    // 立即删除文件名，文件描述符依然有效
+    unlink(tmp_name);
  
+    int stride = cairo_format_stride_for_width(CAIRO_FORMAT_ARGB32, state->width);
+    int size = stride * state->height;
+ 
+    if (ftruncate(fd, size) < 0) {
+        close(fd);
+        fprintf(stderr, "ftruncate failed\n");
+        return -1;
+    }
+ 
+    // 将文件映射到内存
+    state->shm_data = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    if (state->shm_data == MAP_FAILED) {
+        close(fd);
+        fprintf(stderr, "mmap failed\n");
+        return -1;
+    }
+ 
+    // 从文件描述符创建Wayland共享内存池
+    struct wl_shm_pool *pool = wl_shm_create_pool(state->shm, fd, size);
+    state->buffer = wl_shm_pool_create_buffer(pool, 0, state->width, state->height, stride, WL_SHM_FORMAT_ARGB8888);
+    
+    wl_shm_pool_destroy(pool);
+    close(fd);
+    return 0;
+}
+
 // 绘制函数
 static void draw_frame(struct state *state) {
+    if (create_shm_buffer(state) < 0) return;
+
     int stride = cairo_format_stride_for_width(CAIRO_FORMAT_ARGB32, state->width);
     int size = stride * state->height;
  
@@ -177,44 +231,6 @@ static const struct wl_registry_listener registry_listener = {
     .global_remove = registry_handle_global_remove,
 };
 
-// 创建共享内存缓冲区
-static int create_shm_buffer(struct state *state) {
-    // 使用 memfd_create 创建一个匿名的、基于内存的文件
-    char tmp_name[] = "/tmp/wayland-shm-XXXXXX";
-    int fd = mkstemp(tmp_name);
-    if (fd < 0) {
-        fprintf(stderr, "mkstemp failed\n");
-        return -1;
-    }
-    // 立即删除文件名，文件描述符依然有效
-    unlink(tmp_name);
- 
-    int stride = cairo_format_stride_for_width(CAIRO_FORMAT_ARGB32, state->width);
-    int size = stride * state->height;
- 
-    if (ftruncate(fd, size) < 0) {
-        close(fd);
-        fprintf(stderr, "ftruncate failed\n");
-        return -1;
-    }
- 
-    // 将文件映射到内存
-    state->shm_data = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-    if (state->shm_data == MAP_FAILED) {
-        close(fd);
-        fprintf(stderr, "mmap failed\n");
-        return -1;
-    }
- 
-    // 从文件描述符创建Wayland共享内存池
-    struct wl_shm_pool *pool = wl_shm_create_pool(state->shm, fd, size);
-    state->buffer = wl_shm_pool_create_buffer(pool, 0, state->width, state->height, stride, WL_SHM_FORMAT_ARGB8888);
-    
-    wl_shm_pool_destroy(pool);
-    close(fd);
-    return 0;
-}
-
 int main(int argc, char **argv) {
     struct state state = {0};
     state.width = 640;
@@ -274,18 +290,12 @@ int main(int argc, char **argv) {
     // 提交表面，让xdg-shell知道我们已经配置好了
     wl_surface_commit(state.surface);
  
-    // 6. 创建共享内存缓冲区用于绘图
-    if (create_shm_buffer(&state) < 0) {
-        fprintf(stderr, "Failed to create shm buffer\n");
-        return 1;
-    }
- 
-    // 7. 主事件循环
+    // 主事件循环
     while (state.running && wl_display_dispatch(state.display) != -1) {
         // 事件处理都在监听器回调中完成
     }
  
-    // 8. 清理资源
+    // 清理资源
     printf("Cleaning up...\n");
     if (state.toplevel_decoration) zxdg_toplevel_decoration_v1_destroy(state.toplevel_decoration);
     if (state.decoration_manager) zxdg_decoration_manager_v1_destroy(state.decoration_manager);
