@@ -21,7 +21,7 @@ Wayland 取代 X11 已成为不可逆转的趋势，主流 Linux 桌面环境已
 要编译示例源码，请提前安装如下开发包：
 
 ```
-sudo apt install build-essential libwayland-dev wayland-protocols libwayland-bin libcairo2-dev
+sudo apt install build-essential libwayland-dev wayland-protocols libwayland-bin libcairo2-dev libdbus-1-dev
 ```
 
 [一、简介](./ch01-introduction.md)
@@ -45,3 +45,9 @@ sudo apt install build-essential libwayland-dev wayland-protocols libwayland-bin
 五、深入 Wayland
 
 [5.1 深入 Surfaces](./ch05-01-surfaces-in-depth.md)
+
+六、beyond Wayland
+
+[6.1窗口定位]()
+[6.2 系统托盘](./ch06-02-systray.md)
+[6.3窗口状态管理]()

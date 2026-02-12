@@ -146,43 +146,38 @@ static DBusHandlerResult sni_message_handler(DBusConnection *conn, DBusMessage *
 
         DBusMessage *reply = dbus_message_new_method_return(msg);
         DBusMessageIter iter, variant;
+        dbus_message_iter_init_append(reply, &iter);
 
         printf("获取属性: %s\n", prop);
         if (strcmp(prop, "IconPixmap") == 0) {
             printf("获取IconPixmap属性\n");
-            dbus_message_iter_init_append(reply, &iter);
             dbus_message_iter_open_container(&iter, DBUS_TYPE_VARIANT, "a(iiay)", &variant);
             append_pixmap(&variant, sni->icon_surface); // 调用转换函数
             dbus_message_iter_close_container(&iter, &variant);
         } else if (strcmp(prop, "IconName") == 0) {
             printf("获取图标属性\n");
             const char *icon_name = sni->icon_name;
-            dbus_message_iter_init_append(reply, &iter);
             dbus_message_iter_open_container(&iter, DBUS_TYPE_VARIANT, "s", &variant);
             dbus_message_iter_append_basic(&variant, DBUS_TYPE_STRING, &icon_name);
             dbus_message_iter_close_container(&iter, &variant);
         } else if (strcmp(prop, "Status") == 0) {
             // 状态可以是 Active, Passive, NeedsAttention
             const char *status = "Active";
-            dbus_message_iter_init_append(reply, &iter);
             dbus_message_iter_open_container(&iter, DBUS_TYPE_VARIANT, "s", &variant);
             dbus_message_iter_append_basic(&variant, DBUS_TYPE_STRING, &status);
             dbus_message_iter_close_container(&iter, &variant);
         } else if (strcmp(prop, "Id") == 0) {
             const char *id = "MyWaylandApp";
-            dbus_message_iter_init_append(reply, &iter);
             dbus_message_iter_open_container(&iter, DBUS_TYPE_VARIANT, "s", &variant);
             dbus_message_iter_append_basic(&variant, DBUS_TYPE_STRING, &id);
             dbus_message_iter_close_container(&iter, &variant);
         } else if (strcmp(prop, "Category") == 0) {
             const char *cat = "ApplicationStatus";
-            dbus_message_iter_init_append(reply, &iter);
             dbus_message_iter_open_container(&iter, DBUS_TYPE_VARIANT, "s", &variant);
             dbus_message_iter_append_basic(&variant, DBUS_TYPE_STRING, &cat);
             dbus_message_iter_close_container(&iter, &variant);
         } else if (strcmp(prop, "Menu") == 0) {
             const char *menu_path = SNI_MENU_PATH;
-            dbus_message_iter_init_append(reply, &iter);
             dbus_message_iter_open_container(&iter, DBUS_TYPE_VARIANT, "o", &variant);
             dbus_message_iter_append_basic(&variant, DBUS_TYPE_OBJECT_PATH, &menu_path);
             dbus_message_iter_close_container(&iter, &variant);
