@@ -10,13 +10,13 @@
 sudo apt install libcairo2-dev libdbus-1-dev
 ```
 
-### 一、 核心概念与职责划分
+### 一、核心概念与职责划分
 
 1. SNI 协议 (org.kde.StatusNotifierItem): 负责定义托盘图标的属性（ID、图标、状态）和动作（左键点击、激活）。
 2. DBusMenu 协议 (com.canonical.dbusmenu): 负责定义右键菜单的内容和点击回调。
 3. Wayland 角色管理: 创建窗口，隐藏窗口时销毁 xdg_toplevel 角色，恢复窗口时重建并重新进行配置（Configure）握手。
 
-### 二、 系统托盘 (SNI) 的dbus实现
+### 二、系统托盘 (SNI) 的dbus实现
 
 #### 2.1. 理解 D-Bus 通信体系
 
@@ -172,7 +172,7 @@ static void append_pixmap(DBusMessageIter *iter, cairo_surface_t *surface) {
 }
 ```
 
-### 三、 托盘菜单 (DBusMenu) 的布局与交互
+### 三、托盘菜单 (DBusMenu) 的布局与交互
 
 SNI 菜单遵循 `com.canonical.dbusmenu` 协议。它不传输像素，只传输“菜单树”。
 
@@ -268,7 +268,7 @@ SNI 菜单遵循 `com.canonical.dbusmenu` 协议。它不传输像素，只传�
     }
 ```
 
-### 四、 主循环：高性能 Poll 模式
+### 四、主循环：高性能 Poll 模式
 
 在前面的示例代码中，我们通常使用这样的主循环：
 ``` c
@@ -316,13 +316,15 @@ SNI 菜单遵循 `com.canonical.dbusmenu` 协议。它不传输像素，只传�
 ```
 上面的代码还有改进的空间，比如 poll 可以同时监听 wayland 和 dbus 的文件句柄，这样有消息到达，都可以得到处理，而不会阻塞。
 
+完整代码请参考 `code/ch06/sample6-2`。
+
 ### 五、调试小技巧
 
 在 SNI（Status Notifier Item）开发过程中，D-Bus 通信往往是一个黑盒。使用调试工具观察消息流向，是定位图标不显示、菜单没反应等问题的核心手段。
 
 以下是针对 SNI 开发的详细调试建议和常用指令。
 
-#### 5.1、 验证服务是否注册 (`busctl` & `dbus-send`)
+#### 5.1 验证服务是否注册 (`busctl` & `dbus-send`)
 
 在你的程序启动后，首先确认 D-Bus 总线上是否真的存在你申请的服务名。
 
@@ -341,7 +343,7 @@ SNI 菜单遵循 `com.canonical.dbusmenu` 协议。它不传输像素，只传�
     busctl --user tree org.wayland.demo.tray
 ```
 
-#### 5.2、 使用 `dbus-monitor` 监听实时消息
+#### 5.2 使用 `dbus-monitor` 监听实时消息
 
 监听发往或来自你的应用的所有消息：
 
@@ -352,11 +354,11 @@ SNI 菜单遵循 `com.canonical.dbusmenu` 协议。它不传输像素，只传�
 
 重点关注的信号与方法：
 
-1.  看注册请求：看你的程序是否向 `org.kde.StatusNotifierWatcher` 发送了 `RegisterStatusNotifierItem`。
-2.  看属性拉取：观察是否有来自管理器的 `org.freedesktop.DBus.Properties.Get` 调用。
-3.  看交互响应：点击托盘图标时，是否有 `Activate` 方法调用进入你的程序。
+1. 看注册请求：看你的程序是否向 `org.kde.StatusNotifierWatcher` 发送了 `RegisterStatusNotifierItem`。
+2. 看属性拉取：观察是否有来自管理器的 `org.freedesktop.DBus.Properties.Get` 调用。
+3. 看交互响应：点击托盘图标时，是否有 `Activate` 方法调用进入你的程序。
 
-#### 5.3、 手动发送消息 (`dbus-send`)
+#### 5.3 手动发送消息 (`dbus-send`)
 
 不确定是否代码的问题，你还可以尝试向 D-Bus 手动发送消息，比如模拟 SNI 的激活方法。SNI 的 `Activate` 方法接受两个整数参数（x, y 坐标，通常传 0, 0 即可）。
 

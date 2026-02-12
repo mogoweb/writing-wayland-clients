@@ -12,9 +12,17 @@ Wayland 的 `xdg-shell` 协议取消了绝对坐标的概念。应用只能请�
 
 然而，在开发某些特定应用（如系统挂件、弹出式工具、或者需要恢复用户上次关闭位置的软件）时，固定位置的需求是真实存在的。为了解决这一矛盾，不同的合成器会提供私有协议。在深度（deepin） 系统的 Treeland 合成器中，`treeland-dde-shell-v1` 协议便是解开这一束缚的关键。
 
+在开发之前，建议安装 treeland 协议开发包：
+
+```
+sudo apt install treeland-protocols
+```
+
+也可以去 [github treeland-protocols](https://github.com/linuxdeepin/treeland-protocols) 查看协议内容。
+
 ### 认识 Treeland 私有协议：`treeland-dde-shell-v1`
 
-Treeland 是深度操作系统（Deepin）基于 wlroots 开发的新一代合成器。为了支持 DDE（Deepin Desktop Environment）特有的桌面交互，它引入了 `treeland-dde-shell-v1` 协议。
+Treeland 是深度操作系统（deepin）基于 wlroots 开发的新一代合成器。为了支持 DDE（Deepin Desktop Environment）特有的桌面交互，它引入了 `treeland-dde-shell-v1` 协议。
 
 该协议扩展了标准窗口的功能，允许客户端与合成器进行更深度的沟通，其中最重要的功能之一就是 **手动指定坐标**。
 
@@ -27,7 +35,7 @@ Treeland 是深度操作系统（Deepin）基于 wlroots 开发的新一代合�
 要使用该协议，你需要按照“生成接口代码 -> 绑定全局对象 -> 关联 Surface -> 发送请求”的流程进行。
 
 #### 1. 生成接口代码
-首先，你需要从 Treeland 的源代码或系统开发包中找到 `treeland-dde-shell-v1.xml`。使用 `wayland-scanner` 工具生成 C 语言头文件和胶水代码：
+首先，你需要从 [github treeland-protocols](https://github.com/linuxdeepin/treeland-protocols) 或系统中（在 /usr/share/treeland-protocols/ 目录下）找到 `treeland-dde-shell-v1.xml`。使用 `wayland-scanner` 工具生成 C 语言头文件和胶水代码：
 
 ```bash
 wayland-scanner client-header treeland-dde-shell-v1.xml treeland-dde-shell-protocol.h
@@ -70,6 +78,8 @@ xdg_toplevel_add_listener(state.xdg_toplevel, &xdg_toplevel_listener, &state);
 // 提交表面，让xdg-shell知道我们已经配置好了
 wl_surface_commit(state.surface);
 ```
+
+完整代码请参考 `code/ch06/sample6-1`。
 
 ### 注意事项
 
