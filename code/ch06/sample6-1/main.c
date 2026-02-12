@@ -217,7 +217,7 @@ int main(int argc, char **argv) {
     // 指定窗口的初始位置
     printf("call set_surface_position to %d,%d\n", 10, 20);
     treeland_dde_shell_surface_v1_set_surface_position(state.dde_shell_surface, 10, 20);
- 
+
     // 5. 通过xdg-shell将表面设置为toplevel窗口
 
     state.xdg_surface = xdg_wm_base_get_xdg_surface(state.xdg_wm_base, state.surface);

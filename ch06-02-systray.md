@@ -18,7 +18,7 @@ sudo apt install libcairo2-dev libdbus-1-dev
 
 ### 二、 系统托盘 (SNI) 的dbus实现
 
-#### 1. 理解 D-Bus 通信体系
+#### 2.1. 理解 D-Bus 通信体系
 
 在进行 D-Bus 通信之前，一般要定义 Service、Path 和 Interfaces。比如我们为 SNI 协议通信定义了：
 ```c
@@ -38,7 +38,7 @@ sudo apt install libcairo2-dev libdbus-1-dev
 
   这是双方约定的通讯协议/方法集合。它定义了你可以被调用的方法（如 Activate）和可以被读取的属性（如 IconName, IconPixmap）。接口名通常与协议规范绑定。虽然我们是在 Wayland 下开发，但因为 SNI 协议最早由 KDE 定义，所以接口名统一叫 org.kde.StatusNotifierItem。
 
-#### 2. 注册与握手
+#### 2.2. 注册与握手
 
 程序启动时，首先向 D-Bus 注册应用的服务名和对象路径。
 
@@ -104,7 +104,7 @@ DBusHandlerResult sni_message_handler(DBusConnection *conn,
     dbus_connection_flush(sni->dbus_conn);
 ```
 
-#### 3. 图标显示
+#### 2.3. 图标显示
 SNI 协议中有两种方式指定托盘图标，一种是在上面的 message_function 函数中处理 IconName ，另一种方式是处理 IconPixmap。如果已经处理了 IconName，系统就不会再发送 IconPixmap。所以如果希望使用自定义的 Pixmap 图像，在处理 IconName 时给一个空的字符串。
 
 * IconName: 这里并不是给一个具体的图像文件的名称，而是用户主题中的某个图像名，如 `apps-system`。优点是图标可以自动适配用户主题颜色和风格，缺点是不够灵活，图标必须先加入用户主题。
@@ -176,7 +176,7 @@ static void append_pixmap(DBusMessageIter *iter, cairo_surface_t *surface) {
 
 SNI 菜单遵循 `com.canonical.dbusmenu` 协议。它不传输像素，只传输“菜单树”。
 
-#### 1. `GetLayout` 树形结构
+#### 3.1. `GetLayout` 树形结构
 这是最复杂的部分。你需要返回一个嵌套的 Variant 结构：
 *   **根节点 (ID 0)**: 必须设置 `children-display: submenu`。
 *   **子节点 (ID 1+)**: 
@@ -247,7 +247,7 @@ SNI 菜单遵循 `com.canonical.dbusmenu` 协议。它不传输像素，只传�
         return DBUS_HANDLER_RESULT_HANDLED;
     }
 ```
-#### 2. 菜单事件路由
+#### 3.2. 菜单事件路由
 当用户点击右键菜单项时，管理器会调用 `Event` 方法：
 *   **参数**: `(i s v u)` -> `(ID, 事件类型, 数据, 时间戳)`。
 
@@ -268,7 +268,7 @@ SNI 菜单遵循 `com.canonical.dbusmenu` 协议。它不传输像素，只传�
     }
 ```
 
-### 五、 主循环：高性能 Poll 模式
+### 四、 主循环：高性能 Poll 模式
 
 在前面的示例代码中，我们通常使用这样的主循环：
 ``` c
@@ -316,13 +316,13 @@ SNI 菜单遵循 `com.canonical.dbusmenu` 协议。它不传输像素，只传�
 ```
 上面的代码还有改进的空间，比如 poll 可以同时监听 wayland 和 dbus 的文件句柄，这样有消息到达，都可以得到处理，而不会阻塞。
 
-### 调试小技巧
+### 五、调试小技巧
 
 在 SNI（Status Notifier Item）开发过程中，D-Bus 通信往往是一个黑盒。使用调试工具观察消息流向，是定位图标不显示、菜单没反应等问题的核心手段。
 
 以下是针对 SNI 开发的详细调试建议和常用指令。
 
-#### 1、 验证服务是否注册 (`busctl` & `dbus-send`)
+#### 5.1、 验证服务是否注册 (`busctl` & `dbus-send`)
 
 在你的程序启动后，首先确认 D-Bus 总线上是否真的存在你申请的服务名。
 
@@ -341,7 +341,7 @@ SNI 菜单遵循 `com.canonical.dbusmenu` 协议。它不传输像素，只传�
     busctl --user tree org.wayland.demo.tray
 ```
 
-#### 2、 使用 `dbus-monitor` 监听实时消息
+#### 5.2、 使用 `dbus-monitor` 监听实时消息
 
 监听发往或来自你的应用的所有消息：
 
@@ -356,7 +356,7 @@ SNI 菜单遵循 `com.canonical.dbusmenu` 协议。它不传输像素，只传�
 2.  看属性拉取：观察是否有来自管理器的 `org.freedesktop.DBus.Properties.Get` 调用。
 3.  看交互响应：点击托盘图标时，是否有 `Activate` 方法调用进入你的程序。
 
-#### 3、 手动发送消息 (`dbus-send`)
+#### 5.3、 手动发送消息 (`dbus-send`)
 
 不确定是否代码的问题，你还可以尝试向 D-Bus 手动发送消息，比如模拟 SNI 的激活方法。SNI 的 `Activate` 方法接受两个整数参数（x, y 坐标，通常传 0, 0 即可）。
 

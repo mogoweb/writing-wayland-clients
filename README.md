@@ -48,6 +48,8 @@ sudo apt install build-essential libwayland-dev wayland-protocols libwayland-bin
 
 六、beyond Wayland
 
-[6.1窗口定位]()
+[6.1设置窗口位置](./ch06-01-window-position.md)
+
 [6.2 系统托盘](./ch06-02-systray.md)
+
 [6.3窗口状态管理]()
