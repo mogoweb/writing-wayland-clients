@@ -24,6 +24,7 @@ struct app_state {
     struct wl_surface *surface;
     struct xdg_surface *xdg_surface;
     struct xdg_toplevel *xdg_toplevel;
+    struct wl_buffer *buffer;
     
     int width, height;
     int running;
@@ -31,6 +32,10 @@ struct app_state {
 
     cairo_surface_t *my_icon_surface;
 };
+
+// 前置声明
+void window_hide(struct app_state *app);  
+void window_show(struct app_state *app);
 
 // --- Cairo 绘图辅助 ---
 static struct wl_buffer* create_shm_buffer(struct app_state *app) {
@@ -74,16 +79,7 @@ static void xdg_toplevel_handle_close(void *data, struct xdg_toplevel *xdg_tople
     struct app_state *app = data;
     printf("点击了关闭按钮，隐藏窗口并驻留托盘...\n");
     
-    // 隐藏窗口逻辑：解绑角色
-    if (app->deco) zxdg_toplevel_decoration_v1_destroy(app->deco);
-    if (app->deco_manager) zxdg_decoration_manager_v1_destroy(app->deco_manager);
-    xdg_toplevel_destroy(app->xdg_toplevel);
-    xdg_surface_destroy(app->xdg_surface);
-    app->xdg_toplevel = NULL;
-    app->xdg_surface = NULL;
-    app->visible = 0;
-    wl_surface_attach(app->surface, NULL, 0, 0);
-    wl_surface_commit(app->surface);
+    window_hide(app);
 }
 
 static const struct xdg_toplevel_listener toplevel_listener = {
@@ -125,14 +121,62 @@ void sni_menu_click(int id, void *user_data) {
 void sni_activate(void *user_data) {
     struct app_state *app = (struct app_state *)user_data;
     printf("托盘被点击，尝试恢复窗口...\n");
-    if (!app->visible) {
-        // 恢复窗口逻辑：重新绑定角色
-        app->xdg_surface = xdg_wm_base_get_xdg_surface(app->wm_base, app->surface);
-        xdg_surface_add_listener(app->xdg_surface, &xdg_surface_listener, app);
-        app->xdg_toplevel = xdg_surface_get_toplevel(app->xdg_surface);
-        xdg_toplevel_add_listener(app->xdg_toplevel, &toplevel_listener, app);
-        app->visible = 1;
+    window_show(app);
+}
+
+void window_show(struct app_state *app) {
+    if (app->visible) return;
+
+    // 1. 创建 xdg_surface
+    app->xdg_surface = xdg_wm_base_get_xdg_surface(app->wm_base, app->surface);
+    xdg_surface_add_listener(app->xdg_surface, &xdg_surface_listener, app);
+
+    // 2. 创建 xdg_toplevel
+    app->xdg_toplevel = xdg_surface_get_toplevel(app->xdg_surface);
+    xdg_toplevel_add_listener(app->xdg_toplevel, &toplevel_listener, app);
+    xdg_toplevel_set_title(app->xdg_toplevel, "SNI Demo App");
+
+    // 3. 重新申请 SSD (必须在 toplevel 创建后)
+    if (app->deco_manager) {
+        app->deco = zxdg_decoration_manager_v1_get_toplevel_decoration(
+            app->deco_manager, app->xdg_toplevel);
+        zxdg_toplevel_decoration_v1_set_mode(app->deco, 
+            ZXDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
     }
+
+    wl_surface_commit(app->surface);
+    wl_display_roundtrip(app->display);
+
+    // 4. 提交
+    wl_surface_attach(app->surface, app->buffer, 0, 0);
+    wl_surface_commit(app->surface);
+    
+    app->visible = 1;
+    printf("窗口已恢复显示\n");
+}
+
+void window_hide(struct app_state *app) {
+    if (!app->visible) return;
+
+    if (app->deco) {
+        zxdg_toplevel_decoration_v1_destroy(app->deco);
+        app->deco = NULL;
+    }
+    if (app->xdg_toplevel) {
+        xdg_toplevel_destroy(app->xdg_toplevel);
+        app->xdg_toplevel = NULL;
+    }
+    if (app->xdg_surface) {
+        xdg_surface_destroy(app->xdg_surface);
+        app->xdg_surface = NULL;
+    }
+
+    // 解绑 Buffer，告诉合成器这个 Surface 现在没内容了
+    wl_surface_attach(app->surface, NULL, 0, 0);
+    wl_surface_commit(app->surface);
+
+    app->visible = 0;
+    printf("窗口已隐藏到托盘\n");
 }
 
 int main() {
@@ -161,8 +205,8 @@ int main() {
     wl_display_roundtrip(app.display);
 
     // 渲染第一帧
-    struct wl_buffer *buffer = create_shm_buffer(&app);
-    wl_surface_attach(app.surface, buffer, 0, 0);
+    app.buffer = create_shm_buffer(&app);
+    wl_surface_attach(app.surface, app.buffer, 0, 0);
     wl_surface_commit(app.surface);
 
     // 初始化 SNI 托盘
