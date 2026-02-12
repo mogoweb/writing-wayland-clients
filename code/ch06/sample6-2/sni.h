@@ -2,8 +2,11 @@
 
 #include <cairo/cairo.h>
 
+#define MENU_ID_EXIT 1
+
 // 1. 定义回调函数指针：当用户在托盘点击“激活”时触发
 typedef void (*sni_activate_callback)(void *user_data);
+typedef void (*sni_menu_click_callback)(int id, void *user_data);
 
 typedef struct sni_manager sni_manager_t;
 
@@ -13,6 +16,7 @@ void sni_manager_destroy(sni_manager_t *sni);
 
 // 3. 设置回调
 void sni_manager_set_on_activate(sni_manager_t *sni, sni_activate_callback cb, void *user_data);
+void sni_manager_set_on_menu_click(sni_manager_t *sni, sni_menu_click_callback cb, void *user_data);
 
 // 4. 图片处理
 void sni_manager_set_icon_pixmap(sni_manager_t *sni, cairo_surface_t *surface);

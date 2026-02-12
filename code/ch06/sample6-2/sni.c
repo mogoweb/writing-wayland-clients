@@ -12,6 +12,13 @@
 #define SNI_PATH      "/StatusNotifierItem"
 #define SNI_INTERFACE "org.kde.StatusNotifierItem"
 
+#define SNI_MENU_PATH "/MenuBar"
+// 菜单项结构
+struct menu_item {
+    int id;
+    const char *label;
+};
+
 static const char introspection_xml[] =
         "<node>"
         "  <interface name='org.freedesktop.DBus.Introspectable'>"
@@ -51,6 +58,7 @@ struct sni_manager {
     
     // 回调相关
     sni_activate_callback on_activate;
+    sni_menu_click_callback on_menu_click;
     void *user_data;
 };
 
@@ -172,6 +180,12 @@ static DBusHandlerResult sni_message_handler(DBusConnection *conn, DBusMessage *
             dbus_message_iter_open_container(&iter, DBUS_TYPE_VARIANT, "s", &variant);
             dbus_message_iter_append_basic(&variant, DBUS_TYPE_STRING, &cat);
             dbus_message_iter_close_container(&iter, &variant);
+        } else if (strcmp(prop, "Menu") == 0) {
+            const char *menu_path = SNI_MENU_PATH;
+            dbus_message_iter_init_append(reply, &iter);
+            dbus_message_iter_open_container(&iter, DBUS_TYPE_VARIANT, "o", &variant);
+            dbus_message_iter_append_basic(&variant, DBUS_TYPE_OBJECT_PATH, &menu_path);
+            dbus_message_iter_close_container(&iter, &variant);
         }
 
         dbus_connection_send(conn, reply, NULL);
@@ -182,7 +196,92 @@ static DBusHandlerResult sni_message_handler(DBusConnection *conn, DBusMessage *
     // 2. 处理点击托盘动作 (Activate 方法)
     if (dbus_message_is_method_call(msg, SNI_INTERFACE, "Activate")) {
         printf("托盘被点击，尝试恢复窗口...\n");
-        // 这里应触发 Wayland 重新显示窗口的逻辑
+        if (sni->on_activate) {
+            sni->on_activate(sni->user_data);
+        }
+        return DBUS_HANDLER_RESULT_HANDLED;
+    }
+
+    return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
+}
+
+static DBusHandlerResult menu_handler(DBusConnection *conn, DBusMessage *msg, void *data) {
+    struct sni_manager *sni = (struct sni_manager *)data;
+
+    // 1. 获取菜单布局 (GetLayout)
+    if (dbus_message_is_method_call(msg, "com.canonical.dbusmenu", "GetLayout")) {
+        DBusMessage *reply = dbus_message_new_method_return(msg);
+        DBusMessageIter iter, root_struct, props_array, dict_entry, variant, children_array;
+
+        uint32_t revision = 1;
+        dbus_message_iter_init_append(reply, &iter);
+        dbus_message_iter_append_basic(&iter, DBUS_TYPE_UINT32, &revision);
+
+        // 返回一个嵌套结构：(ia{sv}av) -> (ID, 属性, 子项)
+        dbus_message_iter_open_container(&iter, DBUS_TYPE_STRUCT, NULL, &root_struct);
+
+        int id = 0; // 根节点 ID
+        dbus_message_iter_append_basic(&root_struct, DBUS_TYPE_INT32, &id);
+
+        // 根节点属性 (留空)
+        dbus_message_iter_open_container(&root_struct, DBUS_TYPE_ARRAY, "{sv}", &props_array);
+        dbus_message_iter_close_container(&root_struct, &props_array);
+
+        // 子节点数组 (放我们的退出项)
+        dbus_message_iter_open_container(&root_struct, DBUS_TYPE_ARRAY, "v", &children_array);
+
+        // --- 退出项开始 ---
+        DBusMessageIter child_variant, child_struct, child_props;
+        dbus_message_iter_open_container(&children_array, DBUS_TYPE_VARIANT, "(ia{sv}av)", &child_variant);
+        dbus_message_iter_open_container(&child_variant, DBUS_TYPE_STRUCT, NULL, &child_struct);
+
+        int exit_id = MENU_ID_EXIT;
+        dbus_message_iter_append_basic(&child_struct, DBUS_TYPE_INT32, &exit_id);
+
+        // 退出项属性 (Label = "退出")
+        dbus_message_iter_open_container(&child_struct, DBUS_TYPE_ARRAY, "{sv}", &child_props);
+
+        dbus_message_iter_open_container(&child_props, DBUS_TYPE_DICT_ENTRY, NULL, &dict_entry);
+        const char *label_key = "label";
+        dbus_message_iter_append_basic(&dict_entry, DBUS_TYPE_STRING, &label_key);
+        const char *label_val = "退出程序";
+        dbus_message_iter_open_container(&dict_entry, DBUS_TYPE_VARIANT, "s", &variant);
+        dbus_message_iter_append_basic(&variant, DBUS_TYPE_STRING, &label_val);
+        dbus_message_iter_close_container(&dict_entry, &variant);
+        dbus_message_iter_close_container(&child_props, &dict_entry);
+
+        dbus_message_iter_close_container(&child_struct, &child_props);
+
+        // 退出项没有子项
+        DBusMessageIter grandchild_array;
+        dbus_message_iter_open_container(&child_struct, DBUS_TYPE_ARRAY, "v", &grandchild_array);
+        dbus_message_iter_close_container(&child_struct, &grandchild_array);
+
+        dbus_message_iter_close_container(&child_variant, &child_struct);
+        dbus_message_iter_close_container(&children_array, &child_variant);
+        // --- 退出项结束 ---
+
+        dbus_message_iter_close_container(&root_struct, &children_array);
+        dbus_message_iter_close_container(&iter, &root_struct);
+
+        dbus_connection_send(conn, reply, NULL);
+        dbus_message_unref(reply);
+        return DBUS_HANDLER_RESULT_HANDLED;
+    }
+
+    // 2. 处理点击事件 (Event)
+    if (dbus_message_is_method_call(msg, "com.canonical.dbusmenu", "Event")) {
+        int id;
+        const char *event_type;
+        dbus_message_get_args(msg, NULL, DBUS_TYPE_INT32, &id, DBUS_TYPE_STRING, &event_type, DBUS_TYPE_INVALID);
+
+        if (sni->on_menu_click && strcmp(event_type, "clicked") == 0) {
+            sni->on_menu_click(id, sni->user_data);
+        }
+
+        DBusMessage *reply = dbus_message_new_method_return(msg);
+        dbus_connection_send(conn, reply, NULL);
+        dbus_message_unref(reply);
         return DBUS_HANDLER_RESULT_HANDLED;
     }
 
@@ -229,6 +328,14 @@ sni_manager_t* sni_manager_create(const char *appid, const char *icon_name)
         return sni;
     }
     printf("成功注册 D-Bus 对象路径: %s\n", SNI_PATH);
+
+    // 注册菜单处理器
+    DBusObjectPathVTable menu_vtable = { .message_function = menu_handler };
+    if (!dbus_connection_try_register_object_path(sni->dbus_conn, SNI_MENU_PATH, &menu_vtable, sni, NULL)) {
+        fprintf(stderr, "Failed to register menu object path\n");
+    }
+    printf("成功注册 D-Bus 菜单路径: %s\n", SNI_MENU_PATH);
+
     dbus_connection_read_write_dispatch(sni->dbus_conn, 100);
 
     /* 注册到 watcher */
@@ -261,4 +368,16 @@ void sni_manager_dispatch(sni_manager_t *sni)
 void sni_manager_set_icon_pixmap(sni_manager_t *sni, cairo_surface_t *surface)
 {
     sni->icon_surface = surface;
+}
+
+void sni_manager_set_on_activate(sni_manager_t *sni, sni_activate_callback cb, void *user_data)
+{
+    sni->on_activate = cb;
+    sni->user_data = user_data;
+}
+
+void sni_manager_set_on_menu_click(sni_manager_t *sni, sni_menu_click_callback cb, void *user_data)
+{
+    sni->on_menu_click = cb;
+    sni->user_data = user_data;
 }

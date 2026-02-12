@@ -114,6 +114,27 @@ static void registry_handle_global(void *data, struct wl_registry *reg, uint32_t
         app->deco_manager = wl_registry_bind(reg, id, &zxdg_decoration_manager_v1_interface, 1);
 }
 
+void sni_menu_click(int id, void *user_data) {
+    struct app_state *app = (struct app_state *)user_data;
+    if (id == MENU_ID_EXIT) {
+        printf("收到菜单指令：正在退出...\n");
+        app->running = 0;
+    }
+}
+
+void sni_activate(void *user_data) {
+    struct app_state *app = (struct app_state *)user_data;
+    printf("托盘被点击，尝试恢复窗口...\n");
+    if (!app->visible) {
+        // 恢复窗口逻辑：重新绑定角色
+        app->xdg_surface = xdg_wm_base_get_xdg_surface(app->wm_base, app->surface);
+        xdg_surface_add_listener(app->xdg_surface, &xdg_surface_listener, app);
+        app->xdg_toplevel = xdg_surface_get_toplevel(app->xdg_surface);
+        xdg_toplevel_add_listener(app->xdg_toplevel, &toplevel_listener, app);
+        app->visible = 1;
+    }
+}
+
 int main() {
     struct app_state app = { .width = 400, .height = 300, .running = 1, .visible = 1 };
     
@@ -146,6 +167,8 @@ int main() {
 
     // 初始化 SNI 托盘
     sni_manager_t *sni = sni_manager_create("org.deepin.waylanddemo.tray", ""/*"utilities-terminal"*/);
+    sni_manager_set_on_activate(sni, sni_activate, &app);
+    sni_manager_set_on_menu_click(sni, sni_menu_click, &app);
 
     app.my_icon_surface = cairo_image_surface_create_from_png("demo_icon.png");
     if (cairo_surface_status(app.my_icon_surface) != CAIRO_STATUS_SUCCESS) {
