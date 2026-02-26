@@ -181,6 +181,55 @@ static DBusHandlerResult sni_message_handler(DBusConnection *conn, DBusMessage *
             dbus_message_iter_open_container(&iter, DBUS_TYPE_VARIANT, "o", &variant);
             dbus_message_iter_append_basic(&variant, DBUS_TYPE_OBJECT_PATH, &menu_path);
             dbus_message_iter_close_container(&iter, &variant);
+        } if (strcmp(prop, "ToolTip") == 0) {
+            dbus_message_iter_open_container(
+                &iter,
+                DBUS_TYPE_VARIANT,
+                "(sa(iiay)ss)",
+                &variant);
+
+            DBusMessageIter struct_iter;
+            dbus_message_iter_open_container(
+                &variant,
+                DBUS_TYPE_STRUCT,
+                NULL,
+                &struct_iter);
+
+            const char *icon_name = "applications-system";
+            const char *title = "Wayland Tray Demo";
+            const char *text = "Hello from pure C SNI demo";
+
+            dbus_message_iter_append_basic(
+                &struct_iter,
+                DBUS_TYPE_STRING,
+                &icon_name);
+            
+            /* empty icon pixmap array */
+            DBusMessageIter array_iter;
+            dbus_message_iter_open_container(
+                &struct_iter,
+                DBUS_TYPE_ARRAY,
+                "(iiay)",
+                &array_iter);
+            dbus_message_iter_close_container(&struct_iter, &array_iter);
+
+            dbus_message_iter_append_basic(
+                &struct_iter,
+                DBUS_TYPE_STRING,
+                &title);
+
+            dbus_message_iter_append_basic(
+                &struct_iter,
+                DBUS_TYPE_STRING,
+                &text);
+
+            dbus_message_iter_close_container(
+                &variant,
+                &struct_iter);
+
+            dbus_message_iter_close_container(
+                &iter,
+                &variant);
         }
 
         dbus_connection_send(conn, reply, NULL);
