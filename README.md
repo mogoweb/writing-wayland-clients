@@ -42,14 +42,30 @@ sudo apt install build-essential libwayland-dev wayland-protocols libwayland-bin
 
 [4.5 窗口装饰](./ch04-05-decoration.md)
 
+[4.6 EGL 渲染](./ch04-06-egl.md)
+
 五、深入 Wayland
 
 [5.1 深入 Surfaces](./ch05-01-surfaces-in-depth.md)
 
+[5.2 深入输入处理](./ch05-02-input-in-depth.md)
+
+[5.3 跨进程窗口关系：xdg-foreign](./ch05-03-xdg-foreign.md)
+
+[5.4 多窗口与父子关系](./ch05-04-multi-window.md)
+
+[5.5 模态对话框](./ch05-05-dialog.md)
+
+[5.6 窗口激活](./ch05-06-activation.md)
+
+[5.7 Surface 裁剪与缩放](./ch05-07-viewporter.md)
+
 六、beyond Wayland
 
-[6.1设置窗口位置](./ch06-01-window-position.md)
+[6.1 设置窗口位置](./ch06-01-window-position.md)
 
 [6.2 系统托盘](./ch06-02-systray.md)
 
-[6.3窗口状态管理]()
+[6.3 窗口状态监控](./ch06-03-foreign-toplevel.md)
+
+[6.4 区域管理](./ch06-04-zones.md)
