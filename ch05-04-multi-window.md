@@ -63,10 +63,15 @@ int main() {
     // 创建主窗口
     struct Window *main_window = create_window(&state, 800, 600, 0xFF0000FF, "Main Window");
 
+    // ★ 重要：等待主窗口 mapped（显示出来）★
+    while (!main_window->is_configured && wl_display_dispatch(state.display) != -1) {
+        // 等待主窗口收到 configure 事件
+    }
+
     // 创建子窗口
     struct Window *popup_window = create_window(&state, 400, 300, 0xFFFF0000, "Popup Window");
 
-    // ★ 设置父子关系 ★
+    // ★ 设置父子关系（必须在子窗口 mapped 之前）★
     xdg_toplevel_set_parent(popup_window->xdg_toplevel, main_window->xdg_toplevel);
 
     // 主事件循环同时服务于两个窗口
@@ -75,6 +80,67 @@ int main() {
     }
 }
 ```
+
+### 父子关系的设置时机（重要）
+
+协议规范对父子关系的设置有严格要求：
+
+> Only mapped surfaces can have child surfaces. Setting a parent which
+> is not mapped is equivalent to setting a null parent.
+
+这意味着：
+
+1. **父窗口必须先 mapped（显示）**：如果设置一个未 mapped 的窗口作为父窗口，效果等同于设置 `NULL`
+
+2. **子窗口必须在 mapped 之前设置 parent**：一旦子窗口已经 mapped，再设置 parent 将不会生效
+
+3. **set_parent 是双缓冲的**：`xdg_toplevel_set_parent` 的设置需要在下一次 `wl_surface_commit` 后才生效
+
+正确的流程：
+
+```
+1. 创建父窗口 → commit → 等待 configure → mapped
+2. 创建子窗口 → commit（触发 configure，但还未 mapped）
+3. 设置 parent（在子窗口 configure 之前）
+4. 子窗口收到 configure → mapped（此时父子关系已建立）
+```
+
+```c
+// 1. 创建并等待主窗口 mapped
+struct Window *main_window = create_window(&state, 800, 600, 0xFF0000FF, "Main Window");
+while (!main_window->is_configured && wl_display_dispatch(state.display) != -1) {
+    // 等待主窗口收到 configure 并渲染
+}
+
+// 2. 创建子窗口（此时还未 mapped）
+struct Window *popup_window = create_window(&state, 400, 300, 0xFFFF0000, "Popup Window");
+
+// 3. 在子窗口 mapped 之前设置 parent
+xdg_toplevel_set_parent(popup_window->xdg_toplevel, main_window->xdg_toplevel);
+
+// 4. 进入主事件循环，子窗口会在 configure 后 mapped
+while (wl_display_dispatch(state.display) != -1) {
+    // 处理事件
+}
+```
+
+### 父子关系的变化行为
+
+当父窗口状态变化时，子窗口的行为遵循以下规则：
+
+1. **父窗口被 unmapped（如最小化）时**：
+   - 子窗口的 parent 会变成父窗口的 parent
+   - 如果父窗口没有 parent，子窗口的父子关系被清除
+
+   > If a surface becomes unmapped, its children's parent is set to the parent
+   > of the now-unmapped surface. If the now-unmapped surface has no parent,
+   > its children's parent is unset.
+
+2. **父窗口重新 mapped 时**：
+   - 父子关系不会自动恢复，需要客户端重新调用 `xdg_toplevel_set_parent`
+
+   > If the now-unmapped surface becomes mapped again, its parent-child
+   > relationship is not restored.
 
 ### 父子关系的效果
 

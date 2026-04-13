@@ -72,6 +72,7 @@ static void xdg_surface_configure(void *data, struct xdg_surface *xdg_surface, u
         wl_surface_attach(win->surface, buffer, 0, 0);
         wl_surface_commit(win->surface);
         win->is_configured = true;
+        printf("Window is now displayed.\n");
     }
 }
 
@@ -156,13 +157,21 @@ int main() {
     // 3. 创建主窗口 (蓝色背景, 800x600)
     struct Window *main_window = create_window(&state, 800, 600, 0xFF0000FF, "Main Window");
 
-    // 4. 创建第二个窗口 (红色背景, 400x300)
+    // 4. 等待主窗口配置完成（显示出来）
+    printf("Waiting for main window to be configured...\n");
+    while (!main_window->is_configured && wl_display_dispatch(state.display) != -1) {
+        // 等待主窗口收到 configure 事件并完成渲染
+    }
+    printf("Main window is now displayed.\n");
+
+    // 5. 创建第二个窗口 (红色背景, 400x300)
     struct Window *popup_window = create_window(&state, 400, 300, 0xFFFF0000, "Popup Window");
 
-    // ★ 5. 核心逻辑：设置第二个窗口的 Parent 为主窗口 ★
+    // ★ 6. 核心逻辑：设置第二个窗口的 Parent 为主窗口 ★
+    // 注意：必须在 popup_window mapped 之前设置 parent，然后 commit 生效
     xdg_toplevel_set_parent(popup_window->xdg_toplevel, main_window->xdg_toplevel);
 
-    // 6. 主事件循环：在这里挂起，持续处理 Wayland 事件
+    // 7. 主事件循环：在这里挂起，持续处理 Wayland 事件
     printf("Windows created. Try Alt+Tab or clicking away and back.\n");
     while (wl_display_dispatch(state.display) != -1) {
         // 这个循环同时服务于两个窗口！
