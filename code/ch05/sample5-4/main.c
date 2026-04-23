@@ -7,6 +7,7 @@
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <wayland-client.h>
+#include <wayland-cursor.h>
 #include "xdg-shell-client-protocol.h"
 
 // ---------------------------------------------------------
@@ -18,6 +19,10 @@ struct ClientState {
     struct wl_compositor *compositor;
     struct wl_shm *shm;
     struct xdg_wm_base *xdg_wm_base;
+    struct wl_seat *seat;
+    struct wl_pointer *pointer;
+    struct wl_surface *cursor_surface;
+    struct wl_cursor_image *cursor_image;
 };
 
 struct Window {
@@ -88,7 +93,55 @@ static const struct xdg_toplevel_listener xdg_toplevel_listener = {
 };
 
 // ---------------------------------------------------------
-// 4. 全局注册表处理
+// 4. 鼠标指针处理
+// ---------------------------------------------------------
+static void pointer_enter(void *data, struct wl_pointer *pointer, uint32_t serial,
+                          struct wl_surface *surface, wl_fixed_t x, wl_fixed_t y) {
+    struct ClientState *state = data;
+    wl_pointer_set_cursor(pointer, serial, state->cursor_surface,
+                          state->cursor_image->hotspot_x, state->cursor_image->hotspot_y);
+}
+
+static void pointer_leave(void *data, struct wl_pointer *pointer, uint32_t serial,
+                          struct wl_surface *surface) {}
+
+static void pointer_motion(void *data, struct wl_pointer *pointer, uint32_t time,
+                           wl_fixed_t x, wl_fixed_t y) {}
+
+static void pointer_button(void *data, struct wl_pointer *pointer, uint32_t serial,
+                           uint32_t time, uint32_t button, uint32_t state) {}
+
+static void pointer_axis(void *data, struct wl_pointer *pointer, uint32_t time,
+                         uint32_t axis, wl_fixed_t value) {}
+
+static const struct wl_pointer_listener pointer_listener = {
+    .enter = pointer_enter,
+    .leave = pointer_leave,
+    .motion = pointer_motion,
+    .button = pointer_button,
+    .axis = pointer_axis,
+};
+
+// ---------------------------------------------------------
+// 5. Seat 处理
+// ---------------------------------------------------------
+static void seat_capabilities(void *data, struct wl_seat *seat, uint32_t caps) {
+    struct ClientState *state = data;
+    if ((caps & WL_SEAT_CAPABILITY_POINTER) && !state->pointer) {
+        state->pointer = wl_seat_get_pointer(seat);
+        wl_pointer_add_listener(state->pointer, &pointer_listener, state);
+    }
+}
+
+static void seat_name(void *data, struct wl_seat *seat, const char *name) {}
+
+static const struct wl_seat_listener seat_listener = {
+    .capabilities = seat_capabilities,
+    .name = seat_name,
+};
+
+// ---------------------------------------------------------
+// 6. 全局注册表处理
 // ---------------------------------------------------------
 static void xdg_wm_base_ping(void *data, struct xdg_wm_base *xdg_wm_base, uint32_t serial) {
     xdg_wm_base_pong(xdg_wm_base, serial); // 心跳保活
@@ -104,12 +157,15 @@ static void registry_handler(void *data, struct wl_registry *registry, uint32_t 
     } else if (strcmp(interface, xdg_wm_base_interface.name) == 0) {
         state->xdg_wm_base = wl_registry_bind(registry, id, &xdg_wm_base_interface, 1);
         xdg_wm_base_add_listener(state->xdg_wm_base, &xdg_wm_base_listener, state);
+    } else if (strcmp(interface, wl_seat_interface.name) == 0) {
+        state->seat = wl_registry_bind(registry, id, &wl_seat_interface, 1);
+        wl_seat_add_listener(state->seat, &seat_listener, state);
     }
 }
 static const struct wl_registry_listener registry_listener = { .global = registry_handler };
 
 // ---------------------------------------------------------
-// 5. 辅助函数：创建窗口
+// 7. 辅助函数：创建窗口
 // ---------------------------------------------------------
 struct Window* create_window(struct ClientState *state, int width, int height, uint32_t color, const char *title) {
     struct Window *win = calloc(1, sizeof(struct Window));
@@ -153,25 +209,41 @@ int main() {
     state.registry = wl_display_get_registry(state.display);
     wl_registry_add_listener(state.registry, &registry_listener, &state);
     wl_display_roundtrip(state.display); // 等待所有全局对象绑定完毕
+    wl_display_roundtrip(state.display); // 等待 seat capabilities
 
-    // 3. 创建主窗口 (蓝色背景, 800x600)
+    if (!state.compositor || !state.shm || !state.xdg_wm_base || !state.seat) {
+        fprintf(stderr, "Missing required Wayland interfaces.\n");
+        return -1;
+    }
+
+    // 3. 初始化光标
+    struct wl_cursor_theme *cursor_theme = wl_cursor_theme_load(NULL, 24, state.shm);
+    struct wl_cursor *cursor = wl_cursor_theme_get_cursor(cursor_theme, "left_ptr");
+    state.cursor_image = cursor->images[0];
+    struct wl_buffer *cursor_buffer = wl_cursor_image_get_buffer(state.cursor_image);
+
+    state.cursor_surface = wl_compositor_create_surface(state.compositor);
+    wl_surface_attach(state.cursor_surface, cursor_buffer, 0, 0);
+    wl_surface_commit(state.cursor_surface);
+
+    // 4. 创建主窗口 (蓝色背景, 800x600)
     struct Window *main_window = create_window(&state, 800, 600, 0xFF0000FF, "Main Window");
 
-    // 4. 等待主窗口配置完成（显示出来）
+    // 5. 等待主窗口配置完成（显示出来）
     printf("Waiting for main window to be configured...\n");
     while (!main_window->is_configured && wl_display_dispatch(state.display) != -1) {
         // 等待主窗口收到 configure 事件并完成渲染
     }
     printf("Main window is now displayed.\n");
 
-    // 5. 创建第二个窗口 (红色背景, 400x300)
+    // 6. 创建第二个窗口 (红色背景, 400x300)
     struct Window *popup_window = create_window(&state, 400, 300, 0xFFFF0000, "Popup Window");
 
-    // ★ 6. 核心逻辑：设置第二个窗口的 Parent 为主窗口 ★
+    // ★ 7. 核心逻辑：设置第二个窗口的 Parent 为主窗口 ★
     // 注意：必须在 popup_window mapped 之前设置 parent，然后 commit 生效
     xdg_toplevel_set_parent(popup_window->xdg_toplevel, main_window->xdg_toplevel);
 
-    // 7. 主事件循环：在这里挂起，持续处理 Wayland 事件
+    // 8. 主事件循环：在这里挂起，持续处理 Wayland 事件
     printf("Windows created. Try Alt+Tab or clicking away and back.\n");
     while (wl_display_dispatch(state.display) != -1) {
         // 这个循环同时服务于两个窗口！
@@ -179,6 +251,11 @@ int main() {
         // 由于循环未被阻塞，主窗口依然能处理它自己的 xdg_surface_configure 进行绘制和保活。
     }
 
+    // 清理
+    wl_cursor_theme_destroy(cursor_theme);
+    wl_surface_destroy(state.cursor_surface);
+    if (state.pointer) wl_pointer_destroy(state.pointer);
+    wl_seat_destroy(state.seat);
     wl_display_disconnect(state.display);
     return 0;
 }

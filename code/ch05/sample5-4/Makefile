@@ -4,7 +4,7 @@
 
 CC = gcc
 CFLAGS = -Wall -O2
-LDFLAGS = -lwayland-client
+LDFLAGS = -lwayland-client -lwayland-cursor
 
 TARGETS = runme
 
